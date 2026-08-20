@@ -1,0 +1,439 @@
+{
+	"name": "yargix",
+	"displayName": "YargiX",
+	"description": "AI coding agent for your editor — agentic chat, inline autocomplete, semantic search, and local models",
+	"version": "0.1.0",
+	"publisher": "yargix",
+	"license": "MIT",
+	"icon": "media/icon.png",
+	"engines": {
+		"vscode": "^1.96.0"
+	},
+	"categories": [
+		"AI",
+		"Chat",
+		"Programming Languages"
+	],
+	"keywords": [
+		"ai",
+		"agent",
+		"chat",
+		"copilot",
+		"assistant",
+		"llm",
+		"local",
+		"offline",
+		"llama.cpp",
+		"ollama",
+		"mcp"
+	],
+	"activationEvents": [],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "yargix.openSettings",
+				"title": "Open YargiX Settings"
+			},
+			{
+				"command": "yargix.addToChat",
+				"title": "YargiX: Add Selection to Chat"
+			},
+			{
+				"command": "yargix.toggleInlineCompletions",
+				"title": "YargiX: Toggle Inline Autocomplete"
+			},
+			{
+				"command": "yargix.inlineEdit",
+				"title": "YargiX: Edit Selection (Inline)"
+			},
+			{
+				"command": "yargix.worktree.create",
+				"title": "YargiX: New Worktree"
+			},
+			{
+				"command": "yargix.worktree.open",
+				"title": "YargiX: Open Worktree"
+			},
+			{
+				"command": "yargix.worktree.merge",
+				"title": "YargiX: Merge Worktree"
+			},
+			{
+				"command": "yargix.worktree.discard",
+				"title": "YargiX: Discard Worktree"
+			},
+			{
+				"command": "yargix.mcpServer.showAddress",
+				"title": "YargiX: Show MCP Server Address"
+			},
+			{
+				"command": "yargix.fixTerminalCommand",
+				"title": "YargiX: Fix Last Failed Terminal Command"
+			},
+			{
+				"command": "yargix.fixDiagnostics",
+				"title": "YargiX: Fix Problems Here"
+			},
+			{
+				"command": "yargix.checkpoint.restore",
+				"title": "YargiX: Rewind to Checkpoint"
+			},
+			{
+				"command": "yargix.checkpoint.create",
+				"title": "YargiX: Create Checkpoint"
+			},
+			{
+				"command": "yargix.checkpoint.clear",
+				"title": "YargiX: Clear All Checkpoints"
+			},
+			{
+				"command": "yargix.changes.keep",
+				"title": "Keep",
+				"icon": "$(check)"
+			},
+			{
+				"command": "yargix.changes.undo",
+				"title": "Undo",
+				"icon": "$(discard)"
+			},
+			{
+				"command": "yargix.changes.keepAll",
+				"title": "Keep All Changes",
+				"icon": "$(check-all)"
+			},
+			{
+				"command": "yargix.changes.undoAll",
+				"title": "Undo All Changes",
+				"icon": "$(discard)"
+			},
+			{
+				"command": "yargix.nextEdit.find",
+				"title": "YargiX: Find Related Edits"
+			},
+			{
+				"command": "yargix.nextEdit.apply",
+				"title": "YargiX: Apply and Jump to Next Edit"
+			},
+			{
+				"command": "yargix.nextEdit.skip",
+				"title": "YargiX: Skip This Related Edit"
+			},
+			{
+				"command": "yargix.nextEdit.cancel",
+				"title": "YargiX: Cancel Related Edits"
+			},
+			{
+				"command": "yargix.showWelcome",
+				"title": "YargiX: Open Welcome Guide"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "yargix.addToChat",
+				"key": "ctrl+l",
+				"mac": "cmd+l",
+				"when": "editorTextFocus"
+			},
+			{
+				"command": "yargix.inlineEdit",
+				"key": "ctrl+i",
+				"mac": "cmd+i",
+				"when": "editorTextFocus"
+			},
+			{
+				"command": "yargix.nextEdit.apply",
+				"key": "alt+enter",
+				"mac": "alt+enter",
+				"when": "editorTextFocus && !findWidgetVisible"
+			},
+			{
+				"command": "yargix.nextEdit.skip",
+				"key": "alt+]",
+				"mac": "alt+]",
+				"when": "editorTextFocus"
+			}
+		],
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "yargix-sidebar",
+					"title": "YargiX",
+					"icon": "media/icon-bar.png"
+				}
+			]
+		},
+		"views": {
+			"yargix-sidebar": [
+				{
+					"type": "webview",
+					"id": "yargix.chatView",
+					"name": "YargiX Agent"
+				},
+				{
+					"id": "yargix.changesView",
+					"name": "Changes"
+				}
+			]
+		},
+		"configuration": [
+			{
+				"title": "YargiX Settings",
+				"properties": {
+					"yargix.model": {
+						"type": "string",
+						"default": "auto",
+						"description": "The AI model to use"
+					},
+					"yargix.maxResponseLength": {
+						"type": "integer",
+						"default": 0,
+						"description": "Maximum response length in tokens (0 = let the model decide)"
+					},
+					"yargix.enableWorkspaceContext": {
+						"type": "boolean",
+						"default": true,
+						"description": "Enable workspace context for the AI agent"
+					},
+					"yargix.enableFileReading": {
+						"type": "boolean",
+						"default": true,
+						"description": "Enable file reading/glob/grep tools"
+					},
+					"yargix.enableTerminalSuggestions": {
+						"type": "boolean",
+						"default": true,
+						"description": "Enable run terminal command suggestions tool"
+					},
+					"yargix.systemPrompt": {
+						"type": "string",
+						"default": "You are a professional coding assistant extension named YargiX.",
+						"description": "System prompt or custom instruction field"
+					},
+					"yargix.inlineCompletions.enabled": {
+						"type": "boolean",
+						"default": false,
+						"description": "Enable Copilot-style inline (ghost-text) autocomplete powered by the selected model"
+					},
+					"yargix.inlineCompletions.model": {
+						"type": "string",
+						"default": "",
+						"description": "Model id for inline autocomplete. Empty = use the selected chat model."
+					},
+					"yargix.inlineCompletions.debounceMs": {
+						"type": "integer",
+						"default": 300,
+						"description": "Delay in ms after typing stops before requesting a completion"
+					},
+					"yargix.inlineCompletions.maxTokens": {
+						"type": "integer",
+						"default": 256,
+						"description": "Maximum tokens generated per inline completion"
+					},
+					"yargix.mcpServer.allowMutatingTools": {
+						"description": "Also expose file-writing and shell tools over MCP (read-only by default)",
+						"default": false,
+						"type": "boolean"
+					},
+					"yargix.mcpServer.enabled": {
+						"description": "Expose YargiX's tools to external MCP clients over loopback HTTP",
+						"default": false,
+						"type": "boolean"
+					},
+					"yargix.mcpServer.port": {
+						"description": "Port for the local MCP server (127.0.0.1 only)",
+						"default": 39273,
+						"type": "integer"
+					},
+					"yargix.terminal.showFixButton": {
+						"type": "boolean",
+						"default": true,
+						"description": "Show a status-bar button to fix the last failed terminal command"
+					},
+					"yargix.plan.requireApproval": {
+						"type": "boolean",
+						"default": true,
+						"description": "Require your approval of the plan before the agent leaves plan mode and starts implementing"
+					},
+					"yargix.fallbackModels": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"default": [],
+						"description": "Models to fall back to, in order, when the active model fails mid-run (provider outage, quota, retired model)"
+					},
+					"yargix.agent.selfCheck": {
+						"type": "boolean",
+						"default": true,
+						"description": "Before finishing a run that changed files, make the agent re-read its edits and run the project checks"
+					},
+					"yargix.browser.executablePath": {
+						"type": "string",
+						"default": "",
+						"description": "Full path to Chrome/Edge/Chromium for the Browser tool. Empty = auto-detect."
+					},
+					"yargix.browser.headless": {
+						"type": "boolean",
+						"default": true,
+						"description": "Run the Browser tool headless. Turn off to watch the agent drive the page."
+					}
+				}
+			}
+		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "yargix.changes.keepAll",
+					"when": "view == yargix.changesView",
+					"group": "navigation@1"
+				},
+				{
+					"command": "yargix.changes.undoAll",
+					"when": "view == yargix.changesView",
+					"group": "navigation@2"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "yargix.changes.keep",
+					"when": "view == yargix.changesView && viewItem == yargixChange",
+					"group": "inline@1"
+				},
+				{
+					"command": "yargix.changes.undo",
+					"when": "view == yargix.changesView && viewItem == yargixChange",
+					"group": "inline@2"
+				}
+			]
+		},
+		"walkthroughs": [
+			{
+				"id": "yargix.welcome",
+				"title": "Get started with YargiX",
+				"description": "Connect a model, ask your first question, and learn how to undo anything.",
+				"steps": [
+					{
+						"id": "connect",
+						"title": "Connect a model",
+						"description": "Use a Claude/ChatGPT/Gemini subscription you already pay for, paste an API key, or run entirely offline with llama.cpp or Ollama.\n[Open settings](command:yargix.openSettings)",
+						"media": {
+							"markdown": "media/walkthrough/connect.md"
+						},
+						"completionEvents": [
+							"onCommand:yargix.openSettings"
+						]
+					},
+					{
+						"id": "chat",
+						"title": "Ask about your code",
+						"description": "Open the panel and ask in plain language. Attach files, docs, git history or your terminal with @.\n[Open YargiX](command:yargix.chatView.focus)",
+						"media": {
+							"markdown": "media/walkthrough/chat.md"
+						},
+						"completionEvents": [
+							"onCommand:yargix.chatView.focus",
+							"onCommand:yargix.addToChat"
+						]
+					},
+					{
+						"id": "edit",
+						"title": "Edit code in place",
+						"description": "Select code and press Ctrl+I to rewrite it from a description. Alt+Enter propagates the change everywhere else it is needed.\n[Try inline edit](command:yargix.inlineEdit)",
+						"media": {
+							"markdown": "media/walkthrough/edit.md"
+						},
+						"completionEvents": [
+							"onCommand:yargix.inlineEdit",
+							"onCommand:yargix.toggleInlineCompletions"
+						]
+					},
+					{
+						"id": "safety",
+						"title": "Stay in control",
+						"description": "Approve what matters, keep or undo edits hunk by hunk, review every changed file, and rewind a whole run.\n[Open the Changes view](command:yargix.changesView.focus)",
+						"media": {
+							"markdown": "media/walkthrough/safety.md"
+						},
+						"completionEvents": [
+							"onCommand:yargix.changesView.focus",
+							"onCommand:yargix.checkpoint.restore"
+						]
+					},
+					{
+						"id": "more",
+						"title": "Go further",
+						"description": "Browser control, a memory that survives sessions, a team of specialists, a terminal CLI, and the MCP catalog.\n[Browse the MCP catalog](command:yargix.openSettings)",
+						"media": {
+							"markdown": "media/walkthrough/more.md"
+						},
+						"completionEvents": [
+							"onCommand:yargix.mcpServer.showAddress"
+						]
+					}
+				]
+			}
+		]
+	},
+	"scripts": {
+		"vscode:prepublish": "pnpm run package",
+		"compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+		"watch": "npm-run-all -p watch:*",
+		"watch:esbuild": "node esbuild.js --watch",
+		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+		"package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
+		"compile-tests": "tsc -p . --outDir out",
+		"watch-tests": "tsc -p . -w --outDir out",
+		"check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
+		"lint": "eslint src",
+		"test": "pnpm run test:unit",
+		"vsix": "pnpm run package && pnpm dlx @vscode/vsce package --no-dependencies",
+		"test:unit": "node esbuild.test.js",
+		"test:integration": "vscode-test",
+		"pretest:integration": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+		"build:cli": "node esbuild.cli.js",
+		"build:exe": "node esbuild.cli.js --production && node scripts/build-exe.js"
+	},
+	"devDependencies": {
+		"@types/mocha": "^10.0.10",
+		"@types/node": "24.x",
+		"@types/pdf-parse": "^1.1.5",
+		"@types/react": "^19.2.17",
+		"@types/react-dom": "^19.2.3",
+		"@types/vscode": "~1.96.0",
+		"@vscode/test-cli": "^0.0.15",
+		"@vscode/test-electron": "^3.0.0",
+		"esbuild": "^0.28.1",
+		"eslint": "^10.5.0",
+		"npm-run-all": "^4.1.5",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.61.1"
+	},
+	"overrides": {
+		"diff": "^8.0.4",
+		"serialize-javascript": "^7.0.6"
+	},
+	"dependencies": {
+		"@huggingface/hub": "^2.13.2",
+		"@huggingface/transformers": "^4.2.0",
+		"lucide-react": "^1.21.0",
+		"marked": "^18.0.5",
+		"onnxruntime-node": "^1.27.0",
+		"pdf-parse": "^2.4.5",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
+		"sharp": "^0.35.2"
+	},
+	"packageManager": "pnpm@11.22.0",
+	"bin": {
+		"yargix": "./dist/cli.js"
+	},
+	"homepage": "https://yargiengine.com",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/YargiEngine/YargiX.git"
+	},
+	"bugs": {
+		"url": "https://github.com/YargiEngine/YargiX/issues"
+	}
+}

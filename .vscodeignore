@@ -1,0 +1,43 @@
+.vscode/**
+.vscode-test/**
+out/**
+# Bundled unit tests: build output, not something users should download.
+out-test/**
+.github/**
+node_modules/**
+src/**
+webview-ui/**
+recipe/**
+plan/**
+*.md
+!README.md
+!CHANGELOG.md
+# The walkthrough renders these at runtime; without them the welcome guide
+# would ship with five empty steps.
+!media/walkthrough/*.md
+pnpm-workspace.yaml
+pnpm-lock.yaml
+tsconfig.webview.json
+scripts/**
+*.vsix
+.gitignore
+.yarnrc
+esbuild.js
+esbuild.cli.js
+esbuild.test.js
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/eslint.config.mjs
+**/*.map
+**/*.ts
+**/.vscode-test.*
+# Inherited OpenCursor artwork the rebranded README no longer references.
+media/readme/**
+# The CLI and its executable are distributed separately; they would double the
+# size of the extension for no benefit to it.
+dist/cli.js
+dist/cli.js.map
+dist/yargix.exe
+dist/yargix
+dist/*.blob
+dist/sea-config.json

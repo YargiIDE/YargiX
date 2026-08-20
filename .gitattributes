@@ -1,0 +1,25 @@
+# Normalise line endings so Windows and POSIX checkouts stop fighting.
+* text=auto eol=lf
+
+# Windows shells refuse to run scripts with LF endings.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Shells refuse to run scripts with CRLF endings.
+*.sh text eol=lf
+
+# Binary: never touch, never diff.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.vsix binary
+*.exe binary
+*.blob binary
+*.onnx binary
+*.gguf binary
+
+# Generated; keep it out of diffs and language stats.
+pnpm-lock.yaml linguist-generated=true -diff
