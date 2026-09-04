@@ -4,6 +4,21 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.3] - 2026-09-04
+
+### Added
+
+- CLI prompt sources for CI and long tasks: `--file` / `-f` (or `-` for stdin), `--stdin`, and a lone `-` positional
+- `--output` / `-o` writes the final answer to a file after a successful `run-result` (creates parent directories; refuses `-` and directory targets)
+- `--system` extra instructions and `--timeout <sec>` wall-clock abort for unattended runs
+- Interactive `/save`, `/load`, `/export`, and `/system` so a terminal session can persist, restore, and transcribe its history
+- Prompt files and stdin are size-capped, BOM-stripped, and rejected when empty; session JSON is schema-validated on load
+
+### Fixed
+
+- `yargix --stdin` in a terminal is refused instead of hanging until EOF
+- A prompt, `--file`, and `--stdin` cannot be combined, so the agent never silently concatenates conflicting inputs
+
 ## [0.1.2] - 2026-08-01
 
 ### Changed

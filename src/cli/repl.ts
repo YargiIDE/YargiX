@@ -18,6 +18,15 @@
 import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
+import { isIoError, readTextFile, writeTextFile } from "./io";
+import {
+  DEFAULT_SESSION_JSON,
+  DEFAULT_SESSION_MD,
+  parseSession,
+  serializeSession,
+  sessionToMarkdown,
+  snapshotSession,
+} from "./session";
 
 export const BANNER = `YargiX interactive session. Type /help for commands, /exit to leave.`;
 
@@ -28,9 +37,13 @@ export const HELP = `Commands
   /mode <name>        switch mode (${MODES.join(", ")})
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
+  /system [text]      extra instructions for this session (/system clear to drop)
   /history            how much conversation is being carried
   /cwd                show the working directory
   /tools              list the tools available in this mode
+  /save [path]        write the conversation as JSON (default: .yargix/session.json)
+  /load [path]        restore a JSON session (default: .yargix/session.json)
+  /export [path]      write a markdown transcript (default: .yargix/session.md)
 
 Anything else is sent to the agent. Ctrl+C stops the current run; Ctrl+D exits.`;
 
@@ -46,6 +59,10 @@ export type Command =
   | { kind: "mode"; value: string }
   | { kind: "model"; value: string }
   | { kind: "auto"; value?: boolean }
+  | { kind: "system"; value: string }
+  | { kind: "save"; value: string }
+  | { kind: "load"; value: string }
+  | { kind: "export"; value: string }
   | { kind: "unknown"; name: string };
 
 /**
@@ -91,6 +108,14 @@ export function parseCommand(line: string): Command {
       if (v === "off" || v === "false" || v === "no") return { kind: "auto", value: false };
       return { kind: "auto" }; // no argument: toggle
     }
+    case "system":
+      return { kind: "system", value };
+    case "save":
+      return { kind: "save", value };
+    case "load":
+      return { kind: "load", value };
+    case "export":
+      return { kind: "export", value };
     default:
       return { kind: "unknown", name };
   }
@@ -163,6 +188,7 @@ interface SessionState {
   mode: Mode;
   model: string;
   auto: boolean;
+  system: string;
   history: Step[];
 }
 
@@ -173,6 +199,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     mode: options.mode,
     model: options.model,
     auto: options.auto,
+    system: options.system,
     // Mutated in place by the agent, which is what carries the conversation.
     history: [],
   };
@@ -186,6 +213,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
 
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
+  if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
 
   let running: AbortController | undefined;
   // Ctrl+C stops the current run rather than killing the session.
@@ -200,9 +228,18 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   };
   rl.on("SIGINT", onInterrupt);
 
+  const queued: string[] = [];
+  if (options.prompt) queued.push(options.prompt);
+
   for (;;) {
-    process.stdout.write(`\n${state.mode}> `);
-    const line = await reader.next();
+    let line: string | null;
+    if (queued.length) {
+      line = queued.shift() ?? null;
+      if (line !== null) out(`${state.mode}> ${line}`);
+    } else {
+      process.stdout.write(`\n${state.mode}> `);
+      line = await reader.next();
+    }
     if (line === null) break; // Ctrl+D or end of piped input
 
     const cmd = parseCommand(line);
@@ -253,6 +290,64 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       out(`- auto-approve: ${state.auto ? "on" : "off"}`);
       continue;
     }
+    if (cmd.kind === "system") {
+      const v = cmd.value.trim();
+      if (!v) {
+        out(state.system ? `- system: ${state.system}` : "- system: (none)");
+        continue;
+      }
+      if (v.toLowerCase() === "clear" || v === "-") {
+        state.system = "";
+        out("- system instructions cleared");
+        continue;
+      }
+      state.system = v;
+      out("- system instructions updated");
+      continue;
+    }
+    if (cmd.kind === "save") {
+      const dest = cmd.value.trim() || DEFAULT_SESSION_JSON;
+      const snap = snapshotSession({
+        mode: state.mode,
+        model: state.model,
+        cwd: options.cwd,
+        steps: state.history,
+      });
+      const written = await writeTextFile(dest, options.cwd, serializeSession(snap));
+      out(isIoError(written) ? `- ${written.error}` : `- saved ${written.path} (${state.history.length} step(s))`);
+      continue;
+    }
+    if (cmd.kind === "load") {
+      const src = cmd.value.trim() || DEFAULT_SESSION_JSON;
+      const loaded = await readTextFile(src, options.cwd, "session file");
+      if (isIoError(loaded)) {
+        out(`- ${loaded.error}`);
+        continue;
+      }
+      const parsed = parseSession(loaded.text);
+      if ("error" in parsed) {
+        out(`- ${parsed.error}`);
+        continue;
+      }
+      state.history.length = 0;
+      for (const step of parsed.snapshot.steps) state.history.push(step);
+      state.mode = parsed.snapshot.mode;
+      if (parsed.snapshot.model) state.model = parsed.snapshot.model;
+      out(`- loaded ${state.history.length} step(s), mode ${state.mode}`);
+      continue;
+    }
+    if (cmd.kind === "export") {
+      const dest = cmd.value.trim() || DEFAULT_SESSION_MD;
+      const snap = snapshotSession({
+        mode: state.mode,
+        model: state.model,
+        cwd: options.cwd,
+        steps: state.history,
+      });
+      const written = await writeTextFile(dest, options.cwd, sessionToMarkdown(snap));
+      out(isIoError(written) ? `- ${written.error}` : `- exported ${written.path}`);
+      continue;
+    }
     if (cmd.kind === "unknown") {
       out(`- unknown command "/${cmd.name}" (try /help)`);
       continue;
@@ -269,6 +364,17 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         midLine = false;
       }
     };
+    let timedOut = false;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    if (options.timeout > 0) {
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, options.timeout * 1000);
+      timeoutTimer.unref();
+    }
+    let finalText = "";
+    let gotResult = false;
 
     try {
       await deps.runAgent({
@@ -276,6 +382,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         mode: state.mode,
         prompt: cmd.text,
         history: state.history,
+        extraInstructions: state.system || undefined,
         approve: async (toolName: string, input: unknown) => {
           if (state.auto) return true;
           endLine();
@@ -301,6 +408,11 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
             process.stdout.write(`- ${ev.name}\n`);
             return;
           }
+          if (ev.type === "run-result") {
+            finalText = ev.text;
+            gotResult = true;
+            return;
+          }
           if (ev.type === "error") {
             endLine();
             process.stdout.write(`x ${ev.message}\n`);
@@ -311,8 +423,14 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       endLine();
       out(`x ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       endLine();
       running = undefined;
+    }
+    if (timedOut) out(`- timed out after ${options.timeout}s`);
+    if (options.output && gotResult) {
+      const written = await writeTextFile(options.output, options.cwd, finalText);
+      if (isIoError(written)) out(`- ${written.error}`);
     }
   }
 

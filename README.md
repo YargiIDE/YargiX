@@ -203,6 +203,8 @@ yargix                                        # interactive session
 yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
+yargix --file task.md --output answer.md --auto --timeout 600
+cat prompt.txt | yargix --stdin --mode ask
 ```
 
 | Flag | |
@@ -211,12 +213,17 @@ yargix "fix the failing build" --auto --json  # for CI
 | `-m, --mode <name>` | agent · ask · plan · debug · review · multitask · project |
 | `--model` `--base-url` `--api-key` | Connection, or use the environment |
 | `--anthropic` | Talk to the endpoint as an Anthropic Messages API |
+| `-f, --file <path>` | Read the prompt from a file (`-` = stdin) |
+| `--stdin` | Read the prompt from stdin (must be piped) |
+| `-o, --output <path>` | Write the final answer to a file |
+| `--system <text>` | Extra instructions for this run |
+| `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 
