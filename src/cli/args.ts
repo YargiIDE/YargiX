@@ -206,7 +206,8 @@ export function parseArgs(
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
       default:
-        if (arg.startsWith("-")) errors.push(`unknown option "${arg}"`);
+        // A lone "-" is the Unix stdin placeholder, not an unknown flag.
+        if (arg.startsWith("-") && arg !== "-") errors.push(`unknown option "${arg}"`);
         else positional.push(arg);
     }
   }

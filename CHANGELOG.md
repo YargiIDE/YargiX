@@ -18,6 +18,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - `yargix --stdin` in a terminal is refused instead of hanging until EOF
 - A prompt, `--file`, and `--stdin` cannot be combined, so the agent never silently concatenates conflicting inputs
+- A lone `-` is treated as stdin, not as an unknown flag
+- Windows browser candidates fall back to `C:\Program Files` when `PROGRAMFILES` is unset, so lookup is not empty on Linux CI or a stripped-down Windows host
 
 ## [0.1.2] - 2026-08-01
 

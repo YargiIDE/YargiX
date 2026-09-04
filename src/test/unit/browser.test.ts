@@ -128,3 +128,9 @@ test("mac and linux candidates include Chrome", () => {
   assert.ok(browserCandidates("darwin").some((p) => /Chrome/i.test(p)));
   assert.ok(browserCandidates("linux").some((p) => /chrom/i.test(p)));
 });
+
+test("win32 candidates are listed even when Windows env vars are unset", () => {
+  const list = browserCandidates("win32");
+  assert.ok(list.some((p) => /chrome\.exe$/i.test(p)));
+  assert.ok(list.some((p) => /msedge\.exe$/i.test(p)));
+});
