@@ -175,8 +175,37 @@ test("buffered lines are still drained after close", async () => {
 // ---------------------------------------------------------------- surfaces
 
 test("the help text documents every command the parser accepts", () => {
-  for (const name of ["/help", "/exit", "/clear", "/mode", "/model", "/auto", "/history", "/cwd", "/tools"]) {
+  for (const name of [
+    "/help",
+    "/exit",
+    "/clear",
+    "/mode",
+    "/model",
+    "/auto",
+    "/system",
+    "/history",
+    "/cwd",
+    "/tools",
+    "/save",
+    "/load",
+    "/export",
+  ]) {
     assert.ok(HELP.includes(name), `help should mention ${name}`);
   }
   assert.ok(BANNER.includes("/help"));
+});
+
+test("save, load and export carry an optional path", () => {
+  assert.deepEqual(parseCommand("/save"), { kind: "save", value: "" });
+  assert.deepEqual(parseCommand("/save notes/run.json"), { kind: "save", value: "notes/run.json" });
+  assert.deepEqual(parseCommand("/load"), { kind: "load", value: "" });
+  assert.deepEqual(parseCommand("/load notes/run.json"), { kind: "load", value: "notes/run.json" });
+  assert.deepEqual(parseCommand("/export out.md"), { kind: "export", value: "out.md" });
+});
+
+test("system shows, sets, and is not sent to the model as a prompt", () => {
+  assert.deepEqual(parseCommand("/system"), { kind: "system", value: "" });
+  assert.deepEqual(parseCommand("/system be terse"), { kind: "system", value: "be terse" });
+  assert.deepEqual(parseCommand("/system clear"), { kind: "system", value: "clear" });
+  assert.notEqual(parseCommand("/system be terse").kind, "prompt");
 });

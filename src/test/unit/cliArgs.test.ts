@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
 
 const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
-const parse = (argv: string[], env = ENV) => parseArgs(argv, env as NodeJS.ProcessEnv);
+const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
 
 // ------------------------------------------------------------------ basics
 
@@ -111,11 +111,22 @@ test("help and version short-circuit validation", () => {
 });
 
 test("a missing prompt, model and endpoint are all reported at once", () => {
-  const { errors } = parseArgs([], {} as NodeJS.ProcessEnv);
+  const { errors } = parseArgs([], {} as NodeJS.ProcessEnv, false);
   assert.equal(errors.length, 3, `expected all three, got ${JSON.stringify(errors)}`);
   assert.match(errors.join(" "), /prompt is required/);
   assert.match(errors.join(" "), /no model/);
   assert.match(errors.join(" "), /no endpoint/);
+});
+
+test("a bare invocation on a TTY opens a session", () => {
+  const { options, errors } = parse([], ENV, true);
+  assert.deepEqual(errors, []);
+  assert.equal(options.interactive, true);
+});
+
+test("a bare invocation without a TTY demands a prompt", () => {
+  const { errors } = parse([], ENV, false);
+  assert.match(errors.join(" "), /prompt is required/);
 });
 
 test("a prompt with no endpoint still fails", () => {
@@ -140,4 +151,86 @@ test("the usage text documents every mode and the --auto requirement", () => {
   }
   assert.match(USAGE, /--auto/);
   assert.match(USAGE, /YARGIX_API_KEY/);
+  assert.match(USAGE, /--file/);
+  assert.match(USAGE, /--stdin/);
+  assert.match(USAGE, /--output/);
+  assert.match(USAGE, /--system/);
+  assert.match(USAGE, /--timeout/);
+});
+
+test("--file supplies the prompt so argv is optional", () => {
+  const { options, errors } = parse(["--file", "task.md"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.file, "task.md");
+  assert.equal(options.prompt, "");
+});
+
+test("--file - is stdin, matching the Unix convention", () => {
+  const { options, errors } = parse(["--file", "-"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.stdin, true);
+  assert.equal(options.file, "");
+});
+
+test("a lone dash positional prompt means stdin", () => {
+  const { options, errors } = parse(["-"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.stdin, true);
+  assert.equal(options.prompt, "");
+});
+
+test("a prompt and --file together is an error", () => {
+  const { errors } = parse(["do it", "--file", "task.md"]);
+  assert.match(errors.join(" "), /prompt or --file/);
+});
+
+test("--file and --stdin together is an error", () => {
+  const { errors } = parse(["--file", "task.md", "--stdin"]);
+  assert.match(errors.join(" "), /--file or --stdin/);
+});
+
+test("--stdin on a TTY is refused so the process cannot hang", () => {
+  const { errors } = parse(["--stdin"], ENV, true);
+  assert.match(errors.join(" "), /piped input/);
+});
+
+test("--stdin cannot be combined with --interactive", () => {
+  const { errors } = parse(["--stdin", "-i"]);
+  assert.match(errors.join(" "), /--interactive/);
+});
+
+test("--output - is refused because the answer already streams to stdout", () => {
+  const { errors } = parse(["x", "--output", "-"]);
+  assert.match(errors.join(" "), /output path cannot be/);
+});
+
+test("new flags parse with their short aliases", () => {
+  const { options, errors } = parse([
+    "--file",
+    "task.md",
+    "-o",
+    "out.md",
+    "--system",
+    "be brief",
+    "--timeout",
+    "90",
+  ]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.file, "task.md");
+  assert.equal(options.output, "out.md");
+  assert.equal(options.system, "be brief");
+  assert.equal(options.timeout, 90);
+});
+
+test("timeout ignores nonsense the way max-steps does", () => {
+  assert.equal(parse(["x", "--timeout", "abc"]).options.timeout, 0);
+  assert.equal(parse(["x", "--timeout", "0"]).options.timeout, 0);
+  assert.equal(parse(["x", "--timeout", "-3"]).options.timeout, 0);
+});
+
+test("--file and -i together is a session that starts from the file", () => {
+  const { options, errors } = parse(["-i", "--file", "task.md"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.interactive, true);
+  assert.equal(options.file, "task.md");
 });

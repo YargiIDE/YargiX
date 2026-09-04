@@ -216,9 +216,14 @@ export function decodeFrame(buf: Buffer): DecodedFrame | undefined {
 /** Candidate Chrome/Edge executables, most preferred first. */
 export function browserCandidates(platform = process.platform): string[] {
   if (platform === "win32") {
-    const roots = [process.env["PROGRAMFILES"], process.env["PROGRAMFILES(X86)"], process.env["LOCALAPPDATA"]].filter(
-      Boolean,
-    ) as string[];
+    // Fall back to the well-known install roots so a Linux/mac CI host can
+    // still enumerate Windows candidates (and so a stripped-down Windows
+    // environment without those variables is not empty-handed).
+    const roots = [
+      process.env["PROGRAMFILES"] || "C:\\Program Files",
+      process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)",
+      process.env["LOCALAPPDATA"] || "C:\\Users\\Default\\AppData\\Local",
+    ];
     const rel = [
       "Google\\Chrome\\Application\\chrome.exe",
       "Microsoft\\Edge\\Application\\msedge.exe",

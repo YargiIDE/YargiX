@@ -16,6 +16,7 @@
 
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -88,6 +89,10 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  const resolved = await resolvePrompt(options);
+  if (typeof resolved === "number") return resolved;
+  options.prompt = resolved;
+
   configureShim({ root: options.cwd, settings: shimSettings(options) });
   // Imported after the shim is configured: these modules read the workspace
   // root at import time through the aliased `vscode` module.
@@ -104,6 +109,7 @@ async function main(): Promise<number> {
           apiKey: options.apiKey,
           anthropic: options.anthropic,
           maxSteps: options.maxSteps,
+          extraInstructions: options.system || undefined,
           enableFileReading: true,
           enableTerminalSuggestions: true,
           enableWorkspaceContext: true,
@@ -147,8 +153,20 @@ async function main(): Promise<number> {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
+  let timedOut = false;
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  if (options.timeout > 0) {
+    timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeout * 1000);
+    timeoutTimer.unref();
+  }
+
   let failed = false;
   let denied = 0;
+  let finalText = "";
+  let gotResult = false;
   try {
     await runAgent({
       apiBaseUrl: options.baseUrl,
@@ -157,6 +175,7 @@ async function main(): Promise<number> {
       anthropic: options.anthropic,
       mode: options.mode,
       prompt: options.prompt,
+      extraInstructions: options.system || undefined,
       history: [],
       maxSteps: options.maxSteps,
       enableFileReading: true,
@@ -173,6 +192,10 @@ async function main(): Promise<number> {
       emit: (ev: AgentEvent) => {
         if (ev.type === "error") failed = true;
         if (ev.type === "run-status" && ev.status === "error") failed = true;
+        if (ev.type === "run-result") {
+          finalText = ev.text;
+          gotResult = true;
+        }
         writeEvent(ev);
       },
     });
@@ -180,15 +203,53 @@ async function main(): Promise<number> {
     process.stderr.write(`x ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     if (!options.json) endLine();
+  }
+
+  if (timedOut) {
+    if (!options.quiet && !options.json) {
+      process.stderr.write(`- timed out after ${options.timeout}s\n`);
+    }
+    failed = true;
+  }
+
+  if (options.output && !timedOut && gotResult) {
+    const written = await writeTextFile(options.output, options.cwd, finalText);
+    if (isIoError(written)) {
+      process.stderr.write(`error: ${written.error}\n`);
+      return 1;
+    }
+    if (!options.quiet && !options.json) {
+      process.stderr.write(`- wrote ${written.path}\n`);
+    }
   }
 
   if (denied && !options.quiet && !options.json) {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * Turn `--file` / `--stdin` / a positional prompt into the text the agent sees.
+ * File and stdin failures are usage errors (exit 2): the run never starts.
+ */
+async function resolvePrompt(options: CliOptions): Promise<string | number> {
+  const source = promptSource(options);
+  if ("error" in source) {
+    process.stderr.write(`error: ${source.error}\n\n${USAGE}\n`);
+    return 2;
+  }
+  if (source.kind === "none") return "";
+  const loaded = await loadPrompt(source, options.cwd);
+  if (isIoError(loaded)) {
+    process.stderr.write(`error: ${loaded.error}\n`);
+    return 2;
+  }
+  return loaded.text;
 }
 
 /**
