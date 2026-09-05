@@ -8,6 +8,9 @@
 
 import type { Mode } from "../agent/types";
 
+/** Default snapshot path for a bare `--resume`. Kept here so args never import session. */
+export const DEFAULT_RESUME = ".yargix/session.json";
+
 export const MODES: Mode[] = ["agent", "ask", "plan", "debug", "review", "multitask", "project"];
 
 export interface CliOptions {
@@ -23,6 +26,8 @@ export interface CliOptions {
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
   mode: Mode;
+  /** True when `-m` / `--mode` was on the command line (so --resume cannot override it). */
+  modeExplicit: boolean;
   model: string;
   baseUrl: string;
   apiKey: string;
@@ -36,6 +41,10 @@ export interface CliOptions {
   quiet: boolean;
   /** Hold a session open instead of answering once and exiting. */
   interactive: boolean;
+  /** Diagnose the local setup instead of starting a run. */
+  doctor: boolean;
+  /** Path of a saved session to continue. Empty = do not resume. */
+  resume: string;
   help: boolean;
   version: boolean;
 }
@@ -50,6 +59,7 @@ export const USAGE = `yargix - run the YargiX coding agent from the terminal
 USAGE
   yargix "<prompt>" [options]     answer once and exit
   yargix [options]                open an interactive session
+  yargix doctor [options]         check the local setup and exit
 
 OPTIONS
   -m, --mode <mode>      agent | ask | plan | debug | review | multitask | project  (default: agent)
@@ -64,11 +74,13 @@ OPTIONS
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
       --max-steps <n>    Stop after n agent steps (default: 50)
+      --resume [path]    Continue a saved session (default: .yargix/session.json)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
       --json             Emit newline-delimited JSON events, for CI
   -i, --interactive      Open a session instead of answering once
   -q, --quiet            Only print the final answer
+      --doctor           Same as the doctor command
   -h, --help             Show this help
   -V, --version          Show the version
 
@@ -76,14 +88,16 @@ ENVIRONMENT
   YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
 
 EXIT CODES
-  0 success   1 agent error   2 bad usage
+  0 success   1 agent error / doctor found a failure   2 bad usage
 
 EXAMPLES
   yargix "explain what this project does" --mode ask
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
-  cat prompt.txt | yargix --stdin --mode ask`;
+  cat prompt.txt | yargix --stdin --mode ask
+  yargix --resume --auto "continue from last time"
+  yargix doctor`;
 
 function toInt(value: string | undefined, fallback: number): number {
   const n = Number(value);
@@ -112,6 +126,7 @@ export function parseArgs(
     system: "",
     timeout: 0,
     mode: "agent",
+    modeExplicit: false,
     model: env.YARGIX_MODEL ?? "",
     baseUrl: env.YARGIX_BASE_URL ?? "",
     apiKey: env.YARGIX_API_KEY ?? "",
@@ -121,6 +136,8 @@ export function parseArgs(
     json: false,
     quiet: false,
     interactive: false,
+    doctor: false,
+    resume: "",
     help: false,
     version: false,
   };
@@ -162,11 +179,27 @@ export function parseArgs(
       case "--interactive":
         options.interactive = true;
         break;
+      case "--doctor":
+        options.doctor = true;
+        break;
+      case "--resume": {
+        const next = argv[i + 1];
+        // A following flag is not a path; a bare --resume uses the default file.
+        if (next === undefined || (next.startsWith("-") && next !== "-")) {
+          options.resume = DEFAULT_RESUME;
+        } else {
+          options.resume = value(arg, argv[++i], true);
+        }
+        break;
+      }
       case "-m":
       case "--mode": {
         const v = value(arg, argv[++i]).toLowerCase();
         if (v && !MODES.includes(v as Mode)) errors.push(`unknown mode "${v}" (expected: ${MODES.join(", ")})`);
-        else if (v) options.mode = v as Mode;
+        else if (v) {
+          options.mode = v as Mode;
+          options.modeExplicit = true;
+        }
         break;
       }
       case "--model":
@@ -218,6 +251,12 @@ export function parseArgs(
     options.stdin = true;
     options.prompt = "";
   }
+  // A lone "doctor" is the health-check command, not a prompt. Quoted phrases
+  // like "doctor the patient" stay prompts because they have more than one word.
+  if (!options.doctor && positional.length === 1 && positional[0].toLowerCase() === "doctor") {
+    options.doctor = true;
+    options.prompt = "";
+  }
 
   if (options.help || options.version) return { options, errors: [] };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
@@ -226,11 +265,18 @@ export function parseArgs(
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");
   if (options.stdin && options.interactive) errors.push("--stdin cannot be used with --interactive");
   if (options.stdin && interactiveDefault) errors.push("--stdin needs piped input (stdin is a terminal)");
+  if (options.doctor && options.resume) errors.push("--doctor cannot be combined with --resume");
+  if (options.doctor && (options.prompt || options.file || options.stdin || options.interactive)) {
+    errors.push("--doctor cannot be combined with a prompt or --interactive");
+  }
+  if (options.doctor) return { options, errors };
+
   // No prompt and a terminal attached: start a session rather than complain.
   const hasPrompt = Boolean(options.prompt || options.file || options.stdin);
   if (!hasPrompt && !options.interactive && interactiveDefault) options.interactive = true;
   if (!hasPrompt && !options.interactive) errors.push("a prompt is required");
-  if (!options.model) errors.push("no model: pass --model or set YARGIX_MODEL");
+  // --resume can supply the model from the snapshot; the endpoint is still required.
+  if (!options.model && !options.resume) errors.push("no model: pass --model or set YARGIX_MODEL");
   if (!options.baseUrl) errors.push("no endpoint: pass --base-url or set YARGIX_BASE_URL");
 
   return { options, errors };

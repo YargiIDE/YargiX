@@ -15,10 +15,11 @@
  */
 
 import type { Attachment, Mode, Step, ToolCall, ToolImage } from "../agent/types";
-import { MODES } from "./args";
+import { DEFAULT_RESUME, MODES } from "./args";
+import { isIoError, readTextFile } from "./io";
 
 export const SESSION_VERSION = 1 as const;
-export const DEFAULT_SESSION_JSON = ".yargix/session.json";
+export const DEFAULT_SESSION_JSON = DEFAULT_RESUME;
 export const DEFAULT_SESSION_MD = ".yargix/session.md";
 /** A hostile dump should not be able to blow the process heap on /load. */
 export const MAX_SESSION_STEPS = 10_000;
@@ -94,6 +95,18 @@ export function parseSession(raw: string): { snapshot: SessionSnapshot } | { err
       steps,
     },
   };
+}
+
+/** Read and validate a session file. Failures are strings, never thrown. */
+export async function loadSessionFile(
+  filePath: string,
+  cwd: string,
+): Promise<{ snapshot: SessionSnapshot; path: string } | { error: string }> {
+  const loaded = await readTextFile(filePath, cwd, "session file");
+  if (isIoError(loaded)) return loaded;
+  const parsed = parseSession(loaded.text);
+  if ("error" in parsed) return parsed;
+  return { snapshot: parsed.snapshot, path: loaded.path };
 }
 
 export function sessionToMarkdown(snap: SessionSnapshot): string {

@@ -17,7 +17,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
+import { parseArgs, isExecutingMode, MODES, USAGE, DEFAULT_RESUME } from "../../cli/args";
 
 const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
 const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
@@ -156,6 +156,8 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--resume/);
+  assert.match(USAGE, /doctor/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +235,68 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("a lone doctor command does not need a model or endpoint", () => {
+  const { options, errors } = parseArgs(["doctor"], {} as NodeJS.ProcessEnv, false);
+  assert.deepEqual(errors, []);
+  assert.equal(options.doctor, true);
+  assert.equal(options.prompt, "");
+});
+
+test("--doctor matches the doctor command", () => {
+  const { options, errors } = parseArgs(["--doctor"], {} as NodeJS.ProcessEnv, false);
+  assert.deepEqual(errors, []);
+  assert.equal(options.doctor, true);
+});
+
+test("doctor plus extra words is a prompt, not the health check", () => {
+  const { options, errors } = parse(["doctor", "the", "patient"]);
+  assert.equal(options.doctor, false);
+  assert.equal(options.prompt, "doctor the patient");
+  assert.deepEqual(errors, []);
+});
+
+test("doctor cannot be combined with a prompt or --resume", () => {
+  assert.match(parse(["--doctor", "fix it"]).errors.join(" "), /cannot be combined/);
+  assert.match(parse(["--doctor", "--resume"]).errors.join(" "), /cannot be combined/);
+});
+
+test("doctor still rejects unknown options", () => {
+  const { errors } = parseArgs(["doctor", "--yolo"], {} as NodeJS.ProcessEnv);
+  assert.match(errors.join(" "), /unknown option "--yolo"/);
+});
+
+test("a bare --resume uses the default session path", () => {
+  const { options, errors } = parse(["keep going", "--resume"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.resume, DEFAULT_RESUME);
+  assert.equal(options.prompt, "keep going");
+});
+
+test("--resume takes an explicit path and does not swallow the next flag", () => {
+  const { options, errors } = parse(["--resume", "notes/run.json", "--json", "continue"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.resume, "notes/run.json");
+  assert.equal(options.json, true);
+  assert.equal(options.prompt, "continue");
+});
+
+test("--resume before another flag uses the default path", () => {
+  const { options, errors } = parse(["--resume", "--auto", "continue"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.resume, DEFAULT_RESUME);
+  assert.equal(options.auto, true);
+});
+
+test("--resume can omit the model because the snapshot may supply it", () => {
+  const { options, errors } = parseArgs(["go", "--resume"], { YARGIX_BASE_URL: "http://local/v1" } as NodeJS.ProcessEnv, false);
+  assert.deepEqual(errors, []);
+  assert.equal(options.model, "");
+  assert.equal(options.resume, DEFAULT_RESUME);
+});
+
+test("--mode on the command line is marked explicit so resume cannot override it", () => {
+  assert.equal(parse(["x", "--mode", "ask"]).options.modeExplicit, true);
+  assert.equal(parse(["x"]).options.modeExplicit, false);
 });

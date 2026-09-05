@@ -16,11 +16,14 @@
 
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { runDoctor, formatDoctor } from "./doctor";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
-import type { AgentEvent } from "../agent/types";
+import { loadSessionFile } from "./session";
+import { addUsage, emptyUsage, formatUsage } from "./usage";
+import type { AgentEvent, Step } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.4";
 
 /** Settings the agent core reads through `workspace.getConfiguration`. */
 function shimSettings(opts: CliOptions): Record<string, unknown> {
@@ -89,9 +92,17 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  if (options.doctor) {
+    return printDoctor(options);
+  }
+
   const resolved = await resolvePrompt(options);
   if (typeof resolved === "number") return resolved;
   options.prompt = resolved;
+
+  const resumed = await applyResume(options);
+  if (typeof resumed === "number") return resumed;
+  const history = resumed;
 
   configureShim({ root: options.cwd, settings: shimSettings(options) });
   // Imported after the shim is configured: these modules read the workspace
@@ -116,6 +127,7 @@ async function main(): Promise<number> {
           ...o,
         } as Parameters<typeof runAgent>[0]),
       toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
+      initialHistory: history,
     });
   }
 
@@ -167,6 +179,7 @@ async function main(): Promise<number> {
   let denied = 0;
   let finalText = "";
   let gotResult = false;
+  const usage = emptyUsage();
   try {
     await runAgent({
       apiBaseUrl: options.baseUrl,
@@ -176,7 +189,7 @@ async function main(): Promise<number> {
       mode: options.mode,
       prompt: options.prompt,
       extraInstructions: options.system || undefined,
-      history: [],
+      history,
       maxSteps: options.maxSteps,
       enableFileReading: true,
       enableTerminalSuggestions: isExecutingMode(options.mode),
@@ -196,6 +209,7 @@ async function main(): Promise<number> {
           finalText = ev.text;
           gotResult = true;
         }
+        if (ev.type === "usage") addUsage(usage, ev);
         writeEvent(ev);
       },
     });
@@ -230,7 +244,52 @@ async function main(): Promise<number> {
   if (denied && !options.quiet && !options.json) {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
+  const usageLine = formatUsage(usage);
+  if (usageLine && !options.quiet && !options.json) {
+    process.stderr.write(`${usageLine}\n`);
+  }
   return failed ? 1 : 0;
+}
+
+async function printDoctor(options: CliOptions): Promise<number> {
+  const report = await runDoctor({
+    version: VERSION,
+    node: process.version,
+    cwd: options.cwd,
+    model: options.model,
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    anthropic: options.anthropic,
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(report)}\n`);
+  } else {
+    process.stdout.write(formatDoctor(report));
+  }
+  return report.ok ? 0 : 1;
+}
+
+/**
+ * Load `--resume` history. Mode comes from the snapshot unless `--mode` was
+ * passed; a missing CLI model falls back to the snapshot's model.
+ */
+async function applyResume(options: CliOptions): Promise<Step[] | number> {
+  if (!options.resume) return [];
+  const loaded = await loadSessionFile(options.resume, options.cwd);
+  if ("error" in loaded) {
+    process.stderr.write(`error: ${loaded.error}\n`);
+    return 2;
+  }
+  if (!options.modeExplicit) options.mode = loaded.snapshot.mode;
+  if (!options.model) options.model = loaded.snapshot.model;
+  if (!options.model) {
+    process.stderr.write("error: no model: pass --model or set YARGIX_MODEL\n");
+    return 2;
+  }
+  if (!options.quiet && !options.json) {
+    process.stderr.write(`- resumed ${loaded.snapshot.steps.length} step(s) from ${loaded.path}\n`);
+  }
+  return loaded.snapshot.steps.slice();
 }
 
 /**

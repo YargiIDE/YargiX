@@ -4,6 +4,20 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-05
+
+### Added
+
+- `yargix doctor` (or `--doctor`) checks Node, the working directory, model/endpoint/key configuration, endpoint `/models` reachability, a local Ollama daemon, and a saved `.yargix/session.json` — without starting a run
+- `--resume [path]` continues a saved session in one-shot or interactive mode (default: `.yargix/session.json`); the snapshot supplies mode and, if needed, model
+- One-shot and REPL turns print a token summary (`tokens: N in / M out`) when the provider reports usage
+
+### Fixed
+
+- `--resume` does not swallow the next flag as a path (`--resume --auto` uses the default session file)
+- Doctor never prints an API key: it is reported only as set or unset
+- An invalid session file fails doctor so a later `--resume` is not a surprise
+
 ## [0.1.3] - 2026-09-04
 
 ### Added
