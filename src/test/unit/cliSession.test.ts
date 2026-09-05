@@ -16,10 +16,14 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs/promises";
+import * as os from "os";
+import * as path from "path";
 
 import type { Step } from "../../agent/types";
 import {
   MAX_SESSION_STEPS,
+  loadSessionFile,
   parseSession,
   serializeSession,
   sessionToMarkdown,
@@ -153,4 +157,23 @@ test("markdown export names speakers and clips huge tool dumps", () => {
   assert.match(md, /more bytes/);
   assert.ok(!md.includes("ignored"), "synthetic steps stay out of the transcript");
   assert.ok(md.length < 20_000);
+});
+
+test("loadSessionFile returns a snapshot from disk and rejects junk", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "yargix-session-"));
+  await fs.writeFile(path.join(root, "ok.json"), serializeSession(snap()));
+  await fs.writeFile(path.join(root, "bad.json"), "{not json");
+
+  const ok = await loadSessionFile("ok.json", root);
+  if ("error" in ok) assert.fail(ok.error);
+  assert.equal(ok.snapshot.mode, "ask");
+  assert.equal(ok.snapshot.steps.length, steps.length);
+
+  const missing = await loadSessionFile("nope.json", root);
+  assert.ok("error" in missing);
+  assert.match(missing.error, /not found/);
+
+  const bad = await loadSessionFile("bad.json", root);
+  assert.ok("error" in bad);
+  assert.match(bad.error, /not valid JSON/);
 });

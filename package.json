@@ -2,7 +2,7 @@
 	"name": "yargix",
 	"displayName": "YargiX",
 	"description": "AI coding agent for your editor — agentic chat, inline autocomplete, semantic search, and local models",
-	"version": "0.1.0",
+	"version": "0.1.4",
 	"publisher": "yargix",
 	"license": "MIT",
 	"icon": "media/icon.png",

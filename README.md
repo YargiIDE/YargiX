@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/238_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -205,6 +205,8 @@ yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
 cat prompt.txt | yargix --stdin --mode ask
+yargix --resume --auto "continue from last time"
+yargix doctor
 ```
 
 | Flag | |
@@ -218,12 +220,16 @@ cat prompt.txt | yargix --stdin --mode ask
 | `-o, --output <path>` | Write the final answer to a file |
 | `--system <text>` | Extra instructions for this run |
 | `--timeout <sec>` | Abort the run after this many seconds |
+| `--resume [path]` | Continue a saved session (default: `.yargix/session.json`) |
+| `doctor` / `--doctor` | Check Node, endpoint, model, Ollama, and a saved session |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session. `--resume` loads that snapshot without entering `/load` first.
+
+`yargix doctor` is the first thing to run when a connection looks wrong. It never prints an API key.
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 

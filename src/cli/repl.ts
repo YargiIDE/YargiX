@@ -18,15 +18,16 @@
 import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
-import { isIoError, readTextFile, writeTextFile } from "./io";
+import { isIoError, writeTextFile } from "./io";
 import {
   DEFAULT_SESSION_JSON,
   DEFAULT_SESSION_MD,
-  parseSession,
+  loadSessionFile,
   serializeSession,
   sessionToMarkdown,
   snapshotSession,
 } from "./session";
+import { addUsage, emptyUsage, formatUsage } from "./usage";
 
 export const BANNER = `YargiX interactive session. Type /help for commands, /exit to leave.`;
 
@@ -182,6 +183,8 @@ export interface ReplDeps {
   /** Injected so the REPL can be exercised without loading the whole agent. */
   runAgent: (opts: Record<string, unknown>) => Promise<void>;
   toolNamesFor: (mode: Mode) => string[];
+  /** History from `--resume`, already validated. */
+  initialHistory?: Step[];
 }
 
 interface SessionState {
@@ -201,7 +204,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     auto: options.auto,
     system: options.system,
     // Mutated in place by the agent, which is what carries the conversation.
-    history: [],
+    history: deps.initialHistory?.slice() ?? [],
   };
 
   const reader = new LineReader(rl);
@@ -214,6 +217,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
+  if (state.history.length) out(`- resumed ${state.history.length} step(s)`);
 
   let running: AbortController | undefined;
   // Ctrl+C stops the current run rather than killing the session.
@@ -319,20 +323,15 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     if (cmd.kind === "load") {
       const src = cmd.value.trim() || DEFAULT_SESSION_JSON;
-      const loaded = await readTextFile(src, options.cwd, "session file");
-      if (isIoError(loaded)) {
+      const loaded = await loadSessionFile(src, options.cwd);
+      if ("error" in loaded) {
         out(`- ${loaded.error}`);
         continue;
       }
-      const parsed = parseSession(loaded.text);
-      if ("error" in parsed) {
-        out(`- ${parsed.error}`);
-        continue;
-      }
       state.history.length = 0;
-      for (const step of parsed.snapshot.steps) state.history.push(step);
-      state.mode = parsed.snapshot.mode;
-      if (parsed.snapshot.model) state.model = parsed.snapshot.model;
+      for (const step of loaded.snapshot.steps) state.history.push(step);
+      state.mode = loaded.snapshot.mode;
+      if (loaded.snapshot.model) state.model = loaded.snapshot.model;
       out(`- loaded ${state.history.length} step(s), mode ${state.mode}`);
       continue;
     }
@@ -375,6 +374,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     let finalText = "";
     let gotResult = false;
+    const usage = emptyUsage();
 
     try {
       await deps.runAgent({
@@ -413,6 +413,10 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
             gotResult = true;
             return;
           }
+          if (ev.type === "usage") {
+            addUsage(usage, ev);
+            return;
+          }
           if (ev.type === "error") {
             endLine();
             process.stdout.write(`x ${ev.message}\n`);
@@ -428,6 +432,8 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       running = undefined;
     }
     if (timedOut) out(`- timed out after ${options.timeout}s`);
+    const usageLine = formatUsage(usage);
+    if (usageLine) out(usageLine);
     if (options.output && gotResult) {
       const written = await writeTextFile(options.output, options.cwd, finalText);
       if (isIoError(written)) out(`- ${written.error}`);
