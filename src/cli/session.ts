@@ -15,6 +15,7 @@
  */
 
 import type { Attachment, Mode, Step, ToolCall, ToolImage } from "../agent/types";
+import { stepsToMarkdown } from "../shared/transcript";
 import { MODES } from "./args";
 
 export const SESSION_VERSION = 1 as const;
@@ -22,7 +23,6 @@ export const DEFAULT_SESSION_JSON = ".yargix/session.json";
 export const DEFAULT_SESSION_MD = ".yargix/session.md";
 /** A hostile dump should not be able to blow the process heap on /load. */
 export const MAX_SESSION_STEPS = 10_000;
-const TOOL_OUTPUT_CLIP = 8_000;
 
 export interface SessionSnapshot {
   version: typeof SESSION_VERSION;
@@ -97,29 +97,15 @@ export function parseSession(raw: string): { snapshot: SessionSnapshot } | { err
 }
 
 export function sessionToMarkdown(snap: SessionSnapshot): string {
-  const lines = [
+  const header = [
     "# YargiX session",
     "",
     `- saved: ${new Date(snap.savedAt).toISOString()}`,
     `- mode: ${snap.mode}`,
     `- model: ${snap.model || "(unset)"}`,
     `- cwd: ${snap.cwd}`,
-    "",
-  ];
-  for (const step of snap.steps) {
-    if (step.kind === "user") {
-      if (step.synthetic) continue;
-      lines.push("## User", "", step.text, "");
-    } else if (step.kind === "assistant") {
-      if (step.text.trim()) lines.push("## Assistant", "", step.text, "");
-      for (const call of step.calls) {
-        lines.push(`### ${call.name}`, "", "```", call.arguments, "```", "");
-      }
-    } else {
-      lines.push(`### ${step.name} (${step.status})`, "", "```", clip(step.output, TOOL_OUTPUT_CLIP), "```", "");
-    }
-  }
-  return `${lines.join("\n").replace(/\n+$/, "")}\n`;
+  ].join("\n");
+  return `${header}\n\n${stepsToMarkdown(snap.steps)}`;
 }
 
 function isMode(v: unknown): v is Mode {
@@ -212,7 +198,3 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function clip(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n… (${text.length - max} more bytes)`;
-}

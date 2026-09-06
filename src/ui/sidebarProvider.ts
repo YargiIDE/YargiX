@@ -34,6 +34,7 @@ import {
   searchRules, searchCode, branchDiffItem, resolveMentions, type MentionItem as HostMentionItem,
 } from "../context/mentions";
 import { getLog, logError } from "../logging";
+import { conversationToMarkdown, resolveTranscriptFormat } from "../shared/transcript";
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "yargix.chatView";
@@ -211,13 +212,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case "exportConversation": {
           const conv = this._store.get(data.convId || this._activeId || "");
           if (!conv) break;
+          const requested = data.format === "json" ? "json" : "markdown";
           const safe = (conv.title || "conversation").replace(/[^\w-]+/g, "_").slice(0, 60);
+          const ext = requested === "json" ? "json" : "md";
+          const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.cwd());
           const target = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.joinPath(vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.cwd()), `${safe}.json`),
-            filters: { JSON: ["json"] },
+            defaultUri: vscode.Uri.joinPath(workspaceUri, `${safe}.${ext}`),
+            filters: requested === "json"
+              ? { JSON: ["json"], Markdown: ["md"] }
+              : { Markdown: ["md"], JSON: ["json"] },
           });
           if (!target) break;
-          await vscode.workspace.fs.writeFile(target, Buffer.from(JSON.stringify(conv, null, 2), "utf8"));
+          const format = resolveTranscriptFormat(target.fsPath, requested);
+          const body = format === "json"
+            ? JSON.stringify(conv, null, 2)
+            : conversationToMarkdown({
+                title: conv.title,
+                createdAt: conv.createdAt,
+                updatedAt: conv.updatedAt,
+                steps: conv.steps,
+                personaId: conv.personaId,
+              });
+          await vscode.workspace.fs.writeFile(target, Buffer.from(body, "utf8"));
           vscode.window.showInformationMessage(`Exported conversation to ${target.fsPath}`);
           break;
         }
