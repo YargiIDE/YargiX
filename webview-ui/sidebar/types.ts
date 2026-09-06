@@ -146,7 +146,7 @@ export type OutMessage =
   | { type: "browseAttachments" }
   | { type: "openSettings"; section?: string }
   | { type: "openBrowserTab"; url?: string }
-  | { type: "exportConversation"; convId?: string }
+  | { type: "exportConversation"; convId?: string; format?: "json" | "markdown" }
   | { type: "newConversation"; personaId?: string }
   | { type: "setPersona"; personaId: string }
   | { type: "selectConversation"; id: string }

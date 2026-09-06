@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/236_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -89,7 +89,7 @@ pnpm install && pnpm run compile
 
 The **welcome guide opens on first run** and walks you through connecting a model — a subscription, an API key, or a fully local model.
 
-Then: open the YargiX panel from the activity bar and ask something.
+Then: open the YargiX panel from the activity bar and ask something. Type `/help` in the composer for the same slash commands the terminal REPL uses (`/mode`, `/model`, `/export`, `/clear`).
 
 | Shortcut | Action |
 |:--|:--|
@@ -289,7 +289,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 236 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable

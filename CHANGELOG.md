@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-06
+
+### Added
+
+- Sidebar slash commands matching the terminal REPL: `/help`, `/clear` (`/new`), `/mode`, `/model`, `/export`, `/settings`
+- A path that starts with `/` (e.g. `/src/cli/main.ts`) is still sent to the agent; an unknown `/word` is reported instead of spending a model call
+- Markdown conversation export from the editor (More menu and `/export`); JSON remains available
+- Shared transcript formatter so CLI `/export` and the sidebar write the same speaker/tool layout, clip huge tool dumps, and never embed attachment blobs in markdown
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

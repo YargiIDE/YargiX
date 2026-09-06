@@ -16,6 +16,7 @@ import { ToolCard, isReadonlySubagent, TimeoutBadge, ToolTimeoutWatch, isToolCou
 import { History } from "./components/History";
 import type { AgentEvent, ApprovalMode, ApprovalRequestInfo, AssistantBlock, AssistantTurn, Attachment, ConversationSummary, ErrorBlock, InMessage, MentionItem, Mode, ModelDef, ModelOption, OutMessage, PendingChangeInfo, PersonaInfo, TeamInfo, ThinkingBlock, ToolBlock, Turn, UserTurn } from "./types";
 import { applyEvent, applyToBlocks, closeTrailingThinking, forceSettleOpenWork, parsePartialArgs, renderMentionTokens } from "./types";
+import { interpretSidebarCommand, parseSidebarCommand, type SidebarCommand } from "../../src/shared/slashCommands";
 
 function post(msg: OutMessage) {
   vscode.postMessage(msg);
@@ -685,6 +686,7 @@ export function App() {
   }, []);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
+  const [commandNotice, setCommandNotice] = React.useState<{ text: string; ok: boolean } | null>(null);
   const moreRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     if (!moreOpen) return;
@@ -1230,7 +1232,36 @@ export function App() {
   const flushQueueRef = React.useRef(flushQueue);
   flushQueueRef.current = flushQueue;
 
+  const applySlash = (cmd: SidebarCommand) => {
+    const result = interpretSidebarCommand(cmd, { mode, model: selectedModel });
+    setCommandNotice({ text: result.notice, ok: result.ok });
+    const action = result.action;
+    if (action.type === "newConversation") post({ type: "newConversation" });
+    else if (action.type === "export") {
+      if (!activeId) {
+        setCommandNotice({ text: "Nothing to export yet.", ok: false });
+      } else {
+        post({ type: "exportConversation", convId: activeId, format: action.format });
+      }
+    }
+    else if (action.type === "setMode") {
+      setMode(action.mode);
+      post({ type: "setMode", mode: action.mode });
+    } else if (action.type === "setModel") {
+      setSelectedModel(action.model);
+      post({ type: "selectModel", model: action.model });
+    } else if (action.type === "openSettings") post({ type: "openSettings" });
+  };
+
   const onSubmit = (text: string, attachments: Attachment[]) => {
+    if (attachments.length === 0) {
+      const cmd = parseSidebarCommand(text);
+      if (cmd.kind !== "prompt" && cmd.kind !== "empty") {
+        applySlash(cmd);
+        return;
+      }
+    }
+    setCommandNotice(null);
     const s = sessionFor(activeIdRef.current);
     const id = activeIdRef.current ?? "";
     // A run is in flight, or other messages are already waiting (e.g. saving an
@@ -1495,9 +1526,15 @@ export function App() {
                 </button>
                 <button
                   disabled={!activeId}
-                  onClick={() => { setMoreOpen(false); post({ type: "exportConversation", convId: activeId }); }}
+                  onClick={() => { setMoreOpen(false); post({ type: "exportConversation", convId: activeId, format: "markdown" }); }}
                 >
-                  <Icon name="download" size={13} /> Export Conversation
+                  <Icon name="download" size={13} /> Export Markdown
+                </button>
+                <button
+                  disabled={!activeId}
+                  onClick={() => { setMoreOpen(false); post({ type: "exportConversation", convId: activeId, format: "json" }); }}
+                >
+                  <Icon name="download" size={13} /> Export JSON
                 </button>
                 <button
                   disabled={openTabs.length === 0}
@@ -1790,6 +1827,19 @@ export function App() {
             </div>
           ) : null;
         })()}
+        {commandNotice && (
+          <div className={"command-notice" + (commandNotice.ok ? "" : " error")} role="status">
+            <pre>{commandNotice.text}</pre>
+            <button
+              className="command-notice-dismiss"
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setCommandNotice(null)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+        )}
         <Composer
           focusKey={activeId ?? "new"}
           mode={mode}

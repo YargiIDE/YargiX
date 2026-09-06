@@ -20,6 +20,8 @@ Type `@` to attach context:
 
 `Ctrl+L` (`Cmd+L` on macOS) sends the current selection straight to the chat.
 
+Type `/` in the composer for the same commands as the terminal session: `/mode ask`, `/export`, `/clear`. A path like `/src/main.ts` is still a prompt.
+
 ## Pick the right mode
 
 **Ask** and **Plan** are read‑only — they cannot touch a file. **Agent** does the work. **Review** hunts for defects. **Project** runs a whole team of specialists.
