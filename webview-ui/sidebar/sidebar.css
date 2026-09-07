@@ -3928,3 +3928,29 @@ body {
 	color: var(--error);
 	background: var(--bg-dark);
 }
+.history-footer {
+	border-top: 1px solid var(--line-soft);
+	padding: var(--sp-3);
+}
+.history-footer button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-3);
+	width: 100%;
+	background: none;
+	border: none;
+	border-radius: var(--r-sm);
+	color: var(--fg-muted, var(--fg));
+	cursor: pointer;
+	font: inherit;
+	font-size: 12.5px;
+	padding: var(--sp-3) var(--sp-4);
+}
+.history-footer button:hover {
+	background: var(--surface-2);
+	color: var(--fg);
+}
+.history-footer button svg {
+	color: var(--fg-faint);
+}

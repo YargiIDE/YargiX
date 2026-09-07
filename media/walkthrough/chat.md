@@ -20,6 +20,8 @@ Type `@` to attach context:
 
 `Ctrl+L` (`Cmd+L` on macOS) sends the current selection straight to the chat.
 
+A conversation you saved from the terminal (`/save` → `.yargix/session.json`) can be opened here with **Import Conversation** in the More menu or History. It becomes a new chat; the file is validated before anything is loaded.
+
 ## Pick the right mode
 
 **Ask** and **Plan** are read‑only — they cannot touch a file. **Agent** does the work. **Review** hunts for defects. **Project** runs a whole team of specialists.

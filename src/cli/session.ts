@@ -74,16 +74,8 @@ export function parseSession(raw: string): { snapshot: SessionSnapshot } | { err
   if (typeof obj.savedAt !== "number" || !Number.isFinite(obj.savedAt)) {
     return { error: "session is missing savedAt" };
   }
-  if (!Array.isArray(obj.steps)) return { error: "session steps must be an array" };
-  if (obj.steps.length > MAX_SESSION_STEPS) {
-    return { error: `session has too many steps (max ${MAX_SESSION_STEPS})` };
-  }
-  const steps: Step[] = [];
-  for (let i = 0; i < obj.steps.length; i++) {
-    const parsed = parseStep(obj.steps[i], i);
-    if ("error" in parsed) return parsed;
-    steps.push(parsed.step);
-  }
+  const parsed = parseSteps(obj.steps);
+  if ("error" in parsed) return parsed;
   return {
     snapshot: {
       version: SESSION_VERSION,
@@ -91,9 +83,24 @@ export function parseSession(raw: string): { snapshot: SessionSnapshot } | { err
       mode: obj.mode,
       model: obj.model,
       cwd: obj.cwd,
-      steps,
+      steps: parsed.steps,
     },
   };
+}
+
+/** Validate a step list from a session or an editor export. Never trusts the file. */
+export function parseSteps(raw: unknown): { steps: Step[] } | { error: string } {
+  if (!Array.isArray(raw)) return { error: "session steps must be an array" };
+  if (raw.length > MAX_SESSION_STEPS) {
+    return { error: `session has too many steps (max ${MAX_SESSION_STEPS})` };
+  }
+  const steps: Step[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const parsed = parseStep(raw[i], i);
+    if ("error" in parsed) return parsed;
+    steps.push(parsed.step);
+  }
+  return { steps };
 }
 
 export function sessionToMarkdown(snap: SessionSnapshot): string {

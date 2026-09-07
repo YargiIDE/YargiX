@@ -4,6 +4,14 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-07
+
+### Added
+
+- Import a conversation into the editor: CLI `/save` snapshots (`.yargix/session.json`) and sidebar JSON exports open as a new chat
+- Command Palette: **YargiX: Import Conversation**; also in the sidebar More menu and the History popup
+- Untrusted files are schema-validated, size-capped, and given a new conversation id so two imports cannot collide or overwrite the open chat
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

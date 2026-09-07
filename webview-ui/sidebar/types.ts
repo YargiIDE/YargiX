@@ -147,6 +147,7 @@ export type OutMessage =
   | { type: "openSettings"; section?: string }
   | { type: "openBrowserTab"; url?: string }
   | { type: "exportConversation"; convId?: string }
+  | { type: "importConversation" }
   | { type: "newConversation"; personaId?: string }
   | { type: "setPersona"; personaId: string }
   | { type: "selectConversation"; id: string }

@@ -14,6 +14,7 @@ import { AgentEvent, Mode, Attachment } from "../agent/types";
 import { listModels, generateTitle, pickModel } from "../agent/provider";
 import { renderWebviewHtml } from "./webviewHtml";
 import { ConversationStore, titleFromText } from "../stores/conversationStore";
+import { MAX_IMPORT_CHARS, parseImportedConversation } from "../stores/conversationImport";
 import { FeatureStore, MODEL_CATALOG, kindMatches, optionsToParams, parseContextLabel, providerEnabled, type ModelDef, type ModelOption, type ProviderConfig } from "../stores/featureStore";
 import { effectiveContextLength, ensureLoaded, isRunning, serverUrlFor } from "../agent/llamacpp";
 import * as ollama from "../agent/ollama";
@@ -100,6 +101,59 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       };
     }
     return undefined;
+  }
+
+  /**
+   * Open a CLI `/save` snapshot or a sidebar JSON export as a new chat.
+   * Always creates a new conversation — never overwrites the one that is open.
+   */
+  public async importConversation(): Promise<void> {
+    await vscode.commands.executeCommand("yargix.chatView.focus");
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      canSelectFolders: false,
+      filters: { JSON: ["json"] },
+      defaultUri: folder ? vscode.Uri.joinPath(folder, ".yargix", "session.json") : undefined,
+      openLabel: "Import",
+      title: "Import YargiX conversation",
+    });
+    const uri = picked?.[0];
+    if (!uri) return;
+
+    let stat: vscode.FileStat;
+    try {
+      stat = await vscode.workspace.fs.stat(uri);
+    } catch {
+      vscode.window.showErrorMessage(`Could not read ${uri.fsPath}`);
+      return;
+    }
+    if (stat.size === 0) {
+      vscode.window.showErrorMessage("Conversation file is empty");
+      return;
+    }
+    if (stat.size > MAX_IMPORT_CHARS) {
+      vscode.window.showErrorMessage(`Conversation file is too large (max ${MAX_IMPORT_CHARS} bytes)`);
+      return;
+    }
+
+    let raw: string;
+    try {
+      raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    } catch (e) {
+      vscode.window.showErrorMessage(`Could not read ${uri.fsPath}: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+
+    const parsed = parseImportedConversation(raw);
+    if ("error" in parsed) {
+      vscode.window.showErrorMessage(`Could not import conversation: ${parsed.error}`);
+      return;
+    }
+
+    const conv = await this._store.importFrom(parsed.imported);
+    await this._selectConversation(conv.id);
+    vscode.window.showInformationMessage(`Imported conversation "${conv.title}"`);
   }
 
   /** Ctrl+L: insert the current editor selection as a @code mention in the composer. */
@@ -221,6 +275,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           vscode.window.showInformationMessage(`Exported conversation to ${target.fsPath}`);
           break;
         }
+        case "importConversation":
+          await this.importConversation();
+          break;
         case "newConversation":
           await this._newConversation(data.personaId);
           break;

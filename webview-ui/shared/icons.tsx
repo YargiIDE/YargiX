@@ -37,6 +37,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Download,
+  Upload,
   Paperclip,
   Pencil,
   Play,
@@ -99,6 +100,7 @@ const MAP = {
   book: BookOpen,
   more: MoreHorizontal,
   download: Download,
+  upload: Upload,
   copy: Copy,
 } satisfies Record<string, LucideIcon>;
 

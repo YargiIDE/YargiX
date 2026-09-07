@@ -143,6 +143,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('yargix.addToChat', () => sidebarProvider.addSelectionToChat())
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('yargix.importConversation', () => sidebarProvider.importConversation())
+  );
+
   context.subscriptions.push({ dispose: () => browserSession.dispose() });
   context.subscriptions.push({ dispose: () => mcpManager.disposeAll() });
   context.subscriptions.push({ dispose: () => disposeLlamacpp() });
