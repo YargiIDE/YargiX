@@ -10,6 +10,7 @@
 import * as vscode from "vscode";
 import type { Step } from "../agent/types";
 import type { Turn } from "../shared/turns";
+import type { ImportedConversation } from "./conversationImport";
 
 export interface Conversation {
   id: string;
@@ -88,13 +89,33 @@ export class ConversationStore {
   async create(personaId?: string): Promise<Conversation> {
     const now = Date.now();
     const conv: Conversation = {
-      id: `c_${now}_${Math.random().toString(36).slice(2, 8)}`,
+      id: newConversationId(now),
       title: "New Chat",
       createdAt: now,
       updatedAt: now,
       steps: [],
       turns: [],
       personaId,
+    };
+    const list = this.all();
+    list.push(conv);
+    await this.persist(list);
+    await this.setActiveId(conv.id);
+    return conv;
+  }
+
+  /** Insert a parsed file as a new chat. Never reuses the file's conversation id. */
+  async importFrom(imported: ImportedConversation): Promise<Conversation> {
+    const now = Date.now();
+    const conv: Conversation = {
+      id: newConversationId(now),
+      title: imported.title,
+      createdAt: imported.createdAt || now,
+      updatedAt: now,
+      steps: cloneJson(imported.steps),
+      turns: cloneJson(imported.turns),
+      personaId: imported.personaId,
+      usedTokens: imported.usedTokens,
     };
     const list = this.all();
     list.push(conv);
@@ -124,4 +145,12 @@ export class ConversationStore {
 export function titleFromText(text: string): string {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length > 40 ? t.slice(0, 40) + "…" : t || "New Chat";
+}
+
+function newConversationId(now: number): string {
+  return `c_${now}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }

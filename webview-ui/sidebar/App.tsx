@@ -1493,6 +1493,9 @@ export function App() {
                 <button onClick={() => { setMoreOpen(false); post({ type: "openBrowserTab" }); }}>
                   <Icon name="globe" size={13} /> Open Browser Tab
                 </button>
+                <button onClick={() => { setMoreOpen(false); post({ type: "importConversation" }); }}>
+                  <Icon name="upload" size={13} /> Import Conversation
+                </button>
                 <button
                   disabled={!activeId}
                   onClick={() => { setMoreOpen(false); post({ type: "exportConversation", convId: activeId }); }}
@@ -1517,6 +1520,7 @@ export function App() {
           activeId={activeId}
           onSelect={(id) => post({ type: "selectConversation", id })}
           onDelete={(id) => post({ type: "deleteConversation", id })}
+          onImport={() => { setHistoryOpen(false); post({ type: "importConversation" }); }}
           onClose={() => setHistoryOpen(false)}
         />
       )}

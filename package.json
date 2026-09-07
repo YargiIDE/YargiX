@@ -126,6 +126,10 @@
 			{
 				"command": "yargix.showWelcome",
 				"title": "YargiX: Open Welcome Guide"
+			},
+			{
+				"command": "yargix.importConversation",
+				"title": "YargiX: Import Conversation"
 			}
 		],
 		"keybindings": [

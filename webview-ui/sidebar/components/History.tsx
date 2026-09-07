@@ -28,12 +28,14 @@ export function History({
   activeId,
   onSelect,
   onDelete,
+  onImport,
   onClose,
 }: {
   list: ConversationSummary[];
   activeId?: string;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onImport: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = React.useState("");
@@ -92,6 +94,11 @@ export function History({
               </div>
             ))
           )}
+        </div>
+        <div className="history-footer">
+          <button type="button" onClick={onImport}>
+            <Icon name="upload" size={13} /> Import conversation…
+          </button>
         </div>
       </div>
     </div>
