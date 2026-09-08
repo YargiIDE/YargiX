@@ -329,7 +329,12 @@ export class SettingsPanel {
             try {
               await vscode.workspace.fs.stat(uri);
             } catch {
-              await vscode.workspace.fs.writeFile(uri, Buffer.from("# Files to exclude from indexing (gitignore syntax)\n"));
+              await vscode.workspace.fs.writeFile(
+                uri,
+                Buffer.from(
+                  "# Files to exclude from indexing and search (gitignore syntax).\n# .yargixignore is also honored if present.\n",
+                ),
+              );
             }
             await vscode.window.showTextDocument(uri);
             break;

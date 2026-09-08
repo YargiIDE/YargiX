@@ -13,7 +13,7 @@ import { spawn } from "child_process";
 import { safePath, getWorkspaceRoot } from "../../context/workspaceUtils";
 import { defineTool } from "./types";
 import { STOP, rgCommand } from "./shared";
-import { scanFilesCached, compileGlob, normalizeGlobPattern } from "./fileScan";
+import { scanFilesCached, compileGlob, normalizeGlobPattern, existingExtraIgnoreFiles } from "./fileScan";
 import { BINARY_EXTS, isNoisePath, NOISE_GLOBS } from "./ignore";
 import { search as semanticIndexSearch, buildIndex, isIndexing, isIndexingEnabled } from "../semanticIndex";
 import { searchDocs, listDocSources } from "../docsIndex";
@@ -96,6 +96,9 @@ export const grepTool = defineTool("Grep", false, async (input, abortSignal) => 
     ];
     // Keep both backends in agreement about what counts as searchable code.
     for (const g of NOISE_GLOBS) args.push("--glob", `!${g}`);
+    for (const ignoreFile of await existingExtraIgnoreFiles(root)) {
+      args.push("--ignore-file", ignoreFile);
+    }
     if (mode === "files_with_matches") {
       args.push("--files-with-matches");
     } else if (mode === "count") {

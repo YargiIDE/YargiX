@@ -689,7 +689,7 @@ function IndexingPanel({
         <Row title="Index New Folders" desc="Automatically index any new folders added to the workspace">
           <Toggle checked={features.indexNewFolders !== false} onChange={(v) => setFeatures({ indexNewFolders: v })} disabled={features.indexingEnabled === false} />
         </Row>
-        <Row title="Ignore Files in .cursorignore" desc="Files to exclude from indexing in addition to .gitignore">
+        <Row title="Ignore Files in .cursorignore" desc="Exclude extra paths from search and indexing (gitignore syntax). .yargixignore is also honored.">
           <button className="btn-secondary" onClick={() => vscode.postMessage({ type: "openCursorignore" })}>Edit</button>
         </Row>
         <Row title="Index Repositories for Instant Grep" desc="Automatically index repositories to speed up Grep searches. All data is stored locally.">
