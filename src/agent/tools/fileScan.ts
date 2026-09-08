@@ -12,7 +12,8 @@
 // Goals: bounded, cancellable, and fast on large repos.
 //  - Parallel breadth-first walk (bounded concurrency) instead of serial DFS.
 //  - Short-TTL scan cache so batched search calls walk the tree once.
-//  - .gitignore-aware pruning so we do not waste time on build output.
+//  - Ignore-file pruning (.gitignore, .cursorignore, .yargixignore) so secrets
+//    and generated trees are not searched or indexed.
 //  - Real glob semantics (`**`, `*`, `?`, `{a,b}`, `[a-z]`) + literal prefix
 //    extraction so `src/foo/**/*.ts` only descends into `src/foo`.
 
@@ -33,7 +34,10 @@ export interface ScannedFile {
 export interface ScanOptions {
   /** Walk directories normally pruned (node_modules, dist, …). */
   includeIgnored?: boolean;
-  /** Honor .gitignore files found while walking. Default true. */
+  /**
+   * Honor ignore files found while walking (.gitignore, .cursorignore,
+   * .yargixignore). Default true. The option name is historical.
+   */
   useGitignore?: boolean;
   /** Hard cap on collected files. */
   maxFiles?: number;
@@ -58,10 +62,15 @@ export interface ScanResult {
 const toPosix = (p: string): string => p.split(path.sep).join("/");
 
 // ---------------------------------------------------------------------------
-// .gitignore
+// Ignore files (gitignore syntax)
 // ---------------------------------------------------------------------------
 
-interface IgnoreRule {
+/** Agent-specific ignore files; ripgrep does not read these on its own. */
+export const EXTRA_IGNORE_FILENAMES = [".cursorignore", ".yargixignore"] as const;
+/** All ignore files honored by the walker, in apply order. */
+export const IGNORE_FILENAMES = [".gitignore", ...EXTRA_IGNORE_FILENAMES] as const;
+
+export interface IgnoreRule {
   re: RegExp;
   negated: boolean;
   dirOnly: boolean;
@@ -105,7 +114,8 @@ function ignoreLineToRe(line: string, anchored: boolean): RegExp {
   return new RegExp(`^${anchored ? "" : "(?:.*/)?"}${out}$`);
 }
 
-function parseGitignore(text: string, base: string): IgnoreRule[] {
+/** Parse gitignore-syntax text. Exported so the matcher can be unit-tested. */
+export function parseGitignore(text: string, base = ""): IgnoreRule[] {
   const rules: IgnoreRule[] = [];
   for (const raw of text.split(/\r?\n/)) {
     let line = raw.trim();
@@ -128,7 +138,7 @@ function parseGitignore(text: string, base: string): IgnoreRule[] {
 }
 
 /** Last matching rule wins, mirroring git's precedence. */
-function isIgnored(rules: IgnoreRule[], rel: string, isDir: boolean): boolean {
+export function isIgnored(rules: IgnoreRule[], rel: string, isDir: boolean): boolean {
   let ignored = false;
   for (const r of rules) {
     if (r.dirOnly && !isDir) continue;
@@ -137,6 +147,45 @@ function isIgnored(rules: IgnoreRule[], rel: string, isDir: boolean): boolean {
     if (r.re.test(scoped)) ignored = !r.negated;
   }
   return ignored;
+}
+
+async function readIgnoreFile(abs: string, base: string): Promise<IgnoreRule[]> {
+  try {
+    const txt = await fs.readFile(abs, "utf8");
+    return parseGitignore(txt, base);
+  } catch {
+    return [];
+  }
+}
+
+/** Load every ignore file present in a directory (root or nested). */
+export async function loadIgnoreDir(dirAbs: string, base = ""): Promise<IgnoreRule[]> {
+  const rules: IgnoreRule[] = [];
+  for (const name of IGNORE_FILENAMES) {
+    rules.push(...(await readIgnoreFile(path.join(dirAbs, name), base)));
+  }
+  return rules;
+}
+
+/**
+ * Names of extra ignore files that exist at `root`, for tools (ripgrep) that
+ * already honor `.gitignore` on their own.
+ */
+export async function existingExtraIgnoreFiles(root: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const name of EXTRA_IGNORE_FILENAMES) {
+    try {
+      const st = await fs.stat(path.join(root, name));
+      if (st.isFile()) found.push(name);
+    } catch {
+      /* missing */
+    }
+  }
+  return found;
+}
+
+function hasIgnoreFile(entries: Dirent[]): boolean {
+  return entries.some((e) => e.isFile() && (IGNORE_FILENAMES as readonly string[]).includes(e.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -293,12 +342,7 @@ export async function scanFiles(root: string, opts: ScanOptions = {}): Promise<S
   };
 
   if (useGitignore) {
-    try {
-      const txt = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-      gitRules = parseGitignore(txt, "");
-    } catch {
-      /* no root .gitignore */
-    }
+    gitRules = await loadIgnoreDir(root, "");
   }
 
   let level: Array<{ abs: string; rel: string; depth: number }> = [{ abs: root, rel: "", depth: 0 }];
@@ -318,14 +362,9 @@ export async function scanFiles(root: string, opts: ScanOptions = {}): Promise<S
           continue; // permission denied / vanished
         }
 
-        // Nested .gitignore files refine pruning for their subtree.
-        if (useGitignore && dir.rel && entries.some((e) => e.name === ".gitignore" && e.isFile())) {
-          try {
-            const txt = await fs.readFile(path.join(dir.abs, ".gitignore"), "utf8");
-            gitRules = gitRules.concat(parseGitignore(txt, dir.rel));
-          } catch {
-            /* ignore */
-          }
+        // Nested ignore files refine pruning for their subtree.
+        if (useGitignore && dir.rel && hasIgnoreFile(entries)) {
+          gitRules = gitRules.concat(await loadIgnoreDir(dir.abs, dir.rel));
         }
 
         for (const e of entries) {

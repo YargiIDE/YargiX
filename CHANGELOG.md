@@ -4,6 +4,17 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-08
+
+### Added
+
+- Search, glob, and the semantic index honor `.cursorignore` and `.yargixignore` (gitignore syntax) in addition to `.gitignore`, including nested copies in subdirectories
+- Ripgrep-backed Grep passes those extra ignore files via `--ignore-file`, so both search backends skip the same secrets and generated trees
+
+### Fixed
+
+- The settings "Edit .cursorignore" control created a file the indexer never read; ignored paths are now actually excluded from discovery
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

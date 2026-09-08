@@ -4,7 +4,7 @@ Open the YargiX panel from the activity bar and ask something in plain language:
 
 > where do we refresh the auth token?
 
-The agent finds the answer by **meaning**, not by keyword — the semantic index is built locally with an on‑device model, so your code is never sent anywhere to be indexed.
+The agent finds the answer by **meaning**, not by keyword — the semantic index is built locally with an on‑device model, so your code is never sent anywhere to be indexed. Paths in `.gitignore`, `.cursorignore`, or `.yargixignore` stay out of search and the index.
 
 ## Bring things into the conversation
 

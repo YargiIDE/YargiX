@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/228_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -152,7 +152,7 @@ flowchart LR
 
 `Read` · `ListDir` · `Glob` · `Grep` · `SemanticSearch` · `SearchDocs` · `FileSearch` · `ReadLints` · `ReadTerminal`
 
-Semantic search finds code by meaning — *"where do we refresh the auth token?"* — using a local index that updates incrementally as you work.
+Semantic search finds code by meaning — *"where do we refresh the auth token?"* — using a local index that updates incrementally as you work. Paths listed in `.gitignore`, `.cursorignore`, or `.yargixignore` are skipped by Glob, Grep, FileSearch, and the index.
 
 </details>
 
