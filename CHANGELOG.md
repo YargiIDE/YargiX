@@ -4,6 +4,17 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-09
+
+### Added
+
+- `ListDir` honors `.gitignore`, `.cursorignore`, and `.yargixignore` (gitignore syntax, including nested copies under the listed folder) in addition to the built-in noise directories
+- `ListDir` reports how many names were hidden as `(N ignored)`, and `include_ignored: true` lists them (`.git` stays hidden)
+
+### Fixed
+
+- `ListDir` no longer advertised that it respected workspace ignore rules while only skipping a hard-coded folder set, so secrets matching `.gitignore` (`.env`, `*.log`, …) are no longer listed by default
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

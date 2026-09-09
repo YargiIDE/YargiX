@@ -15,6 +15,7 @@ import { pendingChanges } from "../../stores/pendingChanges";
 import { defineTool, type Tool, type ToolResult, type ToolContext } from "./types";
 import { IGNORE, makeDiff, firstDiffLine } from "./shared";
 import { scanFilesCached, compileGlob, normalizeGlobPattern, scorePath } from "./fileScan";
+import { isIgnored, loadIgnoreRules, truthyFlag } from "./ignoreFiles";
 
 // Image extensions the Read tool returns as base64 blocks to the model.
 const IMAGE_MIME: Record<string, string> = {
@@ -284,18 +285,48 @@ export const listDirTool = defineTool("ListDir", false, async (input, abortSigna
 		} catch (e) {
 			return { output: `error: invalid path: ${e instanceof Error ? e.message : String(e)}` };
 		}
+		const includeIgnored = truthyFlag((input as { include_ignored?: unknown }).include_ignored);
+		const root = getWorkspaceRoot();
+		const relToRoot = path.relative(root, p);
+		const outside = relToRoot.startsWith("..") || path.isAbsolute(relToRoot);
+		let dirRel = "";
+		if (!outside) {
+			dirRel = relToRoot.split(path.sep).join("/");
+			if (dirRel === "." || dirRel === "") dirRel = "";
+		}
 		const opts: { withFileTypes: true; signal?: AbortSignal } = { withFileTypes: true };
 		if (abortSignal) opts.signal = abortSignal;
 		const entries = await withAbortTimeout(fs.readdir(p, opts), READ_IO_MS, abortSignal, "ListDir");
-		const visible = entries.filter((e) => !IGNORE.has(e.name));
+		const rules = outside
+			? []
+			: await withAbortTimeout(loadIgnoreRules(root, dirRel, abortSignal), READ_IO_MS, abortSignal, "ListDir");
+		const visible: typeof entries = [];
+		let ignoredCount = 0;
+		for (const e of entries) {
+			const name = e.name;
+			// .git is never useful in a listing and is always huge.
+			if (name === ".git") {
+				ignoredCount++;
+				continue;
+			}
+			if (!includeIgnored) {
+				const rel = dirRel ? `${dirRel}/${name}` : name;
+				if (IGNORE.has(name) || (rules.length > 0 && isIgnored(rules, rel, e.isDirectory()))) {
+					ignoredCount++;
+					continue;
+				}
+			}
+			visible.push(e);
+		}
 		// Dirs first, then files — fewer tokens spent scanning, easier to navigate.
 		visible.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
 		const shown = visible.slice(0, 300);
 		const extra = visible.length > shown.length ? `\n... (${visible.length - shown.length} more entries)` : "";
+		const hidden = !includeIgnored && ignoredCount > 0 ? `\n(${ignoredCount} ignored)` : "";
 		const out = shown.map((e) => (e.isDirectory() ? `${e.name}/` : e.name)).join("\n") || "(empty)";
 		// One short legend beats per-entry type labels: models otherwise treat a
 		// trailing "/" as cosmetic and try to Read directories.
-		return { output: `(trailing / = directory, no slash = file)\n${out}${extra}` };
+		return { output: `(trailing / = directory, no slash = file)\n${out}${extra}${hidden}` };
 	} catch (e) {
 		return { output: `error: ListDir failed: ${e instanceof Error ? e.message : String(e)}` };
 	}
