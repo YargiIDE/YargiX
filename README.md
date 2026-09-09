@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/232_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -151,6 +151,8 @@ flowchart LR
 <summary><b>Read &amp; search</b></summary>
 
 `Read` · `ListDir` · `Glob` · `Grep` · `SemanticSearch` · `SearchDocs` · `FileSearch` · `ReadLints` · `ReadTerminal`
+
+`ListDir` skips `.gitignore` / `.cursorignore` / `.yargixignore` matches and common noise folders; pass `include_ignored` when you actually need to see them.
 
 Semantic search finds code by meaning — *"where do we refresh the auth token?"* — using a local index that updates incrementally as you work.
 
@@ -289,7 +291,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 232 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable

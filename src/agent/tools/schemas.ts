@@ -482,11 +482,12 @@ def({
 
 def({
   name: "ListDir",
-  description: "Lists the files and subdirectories contained directly within a single directory. The fastest way to understand the shape of an unfamiliar part of the codebase before diving in.\n\nUsage:\n- Returns one entry per line; directories are suffixed with a trailing slash (e.g. `src/`) and files are not. Never pass a slash-suffixed entry to Read — list or glob it instead.\n- Lists only the immediate children of the given directory; it is NOT recursive. Use Glob for recursive name matching or Grep to search file contents.\n- Common noise directories (`.git`, `node_modules`, `dist`, `out`) are omitted from the listing.\n- Prefer this over a `Shell` `ls` call: it is faster and respects the workspace's ignore rules.\n- You have the capability to call multiple tools in a single response. Batch independent listings together.",
+  description: "Lists the files and subdirectories contained directly within a single directory. The fastest way to understand the shape of an unfamiliar part of the codebase before diving in.\n\nUsage:\n- Returns one entry per line; directories are suffixed with a trailing slash (e.g. `src/`) and files are not. Never pass a slash-suffixed entry to Read — list or glob it instead.\n- Lists only the immediate children of the given directory; it is NOT recursive. Use Glob for recursive name matching or Grep to search file contents.\n- Honors `.gitignore`, `.cursorignore`, and `.yargixignore` (including nested copies under the listed path), plus common noise directories (`.git`, `node_modules`, `dist`, `out`). Hidden entries are counted at the bottom as `(N ignored)`.\n- Pass `include_ignored: true` to see ignored names too. `.git` is never listed.\n- Prefer this over a `Shell` `ls` call: it is faster and respects the workspace's ignore rules.\n- You have the capability to call multiple tools in a single response. Batch independent listings together.",
   parameters: {
     type: "object",
     properties: {
       path: { type: "string", description: "Workspace-relative path of the directory to list. Defaults to the workspace root when omitted." },
+      include_ignored: { type: "boolean", description: "When true, list entries that `.gitignore` / `.cursorignore` / `.yargixignore` or the built-in noise set would otherwise hide. Default false. `.git` stays hidden." },
     },
   },
 });

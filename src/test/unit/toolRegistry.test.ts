@@ -66,6 +66,11 @@ test("the Browser tool is registered and kept out of read-only modes", () => {
   assert.ok(toolsForMode("agent").some((t) => t.schema.function.name === "Browser"));
 });
 
+test("ListDir documents include_ignored so ignored names can be revealed", () => {
+  const params = TOOLS.ListDir.schema.function.parameters as { properties?: Record<string, unknown> };
+  assert.ok(params.properties?.include_ignored, "ListDir needs an include_ignored flag");
+});
+
 test("review mode can read and search but never write or run commands", () => {
   const names = toolsForMode("review").map((t) => t.schema.function.name);
   // A reviewer needs to read code, search it, and see the user's terminal.
