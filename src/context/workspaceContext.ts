@@ -12,48 +12,10 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { spawn } from "child_process";
 import { getWorkspaceRoot } from "./workspaceUtils";
+import { buildFileTree } from "./fileTree";
 
-const IGNORE = new Set([".git", "node_modules", "dist", "out", ".next", "build", ".cache", "coverage"]);
-
-async function buildTree(dir: string, prefix: string, depth: number, lines: string[], budget: { n: number }): Promise<void> {
-  if (depth > 3 || budget.n <= 0) {
-    return;
-  }
-  let entries: import("fs").Dirent[];
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  entries.sort((a, b) => {
-    if (a.isDirectory() !== b.isDirectory()) {
-      return a.isDirectory() ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-  for (const e of entries) {
-    if (IGNORE.has(e.name) || e.name.startsWith(".") && e.name !== ".cursor") {
-      continue;
-    }
-    if (budget.n <= 0) {
-      lines.push(`${prefix}…`);
-      return;
-    }
-    budget.n--;
-    if (e.isDirectory()) {
-      lines.push(`${prefix}${e.name}/`);
-      await buildTree(path.join(dir, e.name), prefix + "  ", depth + 1, lines, budget);
-    } else {
-      lines.push(`${prefix}${e.name}`);
-    }
-  }
-}
-
-export async function getFileTree(): Promise<string> {
-  const root = getWorkspaceRoot();
-  const lines: string[] = [];
-  await buildTree(root, "", 0, lines, { n: 200 });
-  return lines.join("\n");
+export async function getFileTree(root = getWorkspaceRoot()): Promise<string> {
+  return buildFileTree(root);
 }
 
 export function getOpenFiles(): string[] {
@@ -83,30 +45,61 @@ export function getActiveSelection(): string | undefined {
   return `${rel} (L${sel.start.line + 1}-${sel.end.line + 1}):\n${text.slice(0, 2000)}`;
 }
 
-function git(args: string[]): Promise<string> {
-  const root = getWorkspaceRoot();
+/** Hang bound so a stuck git never delays the first model request. */
+export const GIT_CONTEXT_TIMEOUT_MS = 2_500;
+const GIT_STATUS_LINES = 30;
+const GIT_LOG_LINES = 5;
+
+function git(args: string[], root: string, timeoutMs = GIT_CONTEXT_TIMEOUT_MS): Promise<string> {
   return new Promise((res) => {
-    const c = spawn("git", args, { cwd: root });
+    const c = spawn("git", args, { cwd: root, stdio: ["ignore", "pipe", "ignore"] });
     let o = "";
+    let settled = false;
+    const done = (value: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      res(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        c.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      done("");
+    }, timeoutMs);
     c.stdout.on("data", (d) => (o += d));
-    c.on("error", () => res(""));
-    c.on("close", () => res(o.trim()));
+    c.on("error", () => done(""));
+    c.on("close", () => done(o.trim()));
   });
 }
 
-export async function getGitContext(): Promise<string> {
-  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+/** Pure formatter so tests do not need a real git checkout. */
+export function formatGitContext(parts: { branch: string; status: string; recent: string }): string {
+  if (!parts.branch) return "";
+  const lines = [`Branch: ${parts.branch}`];
+  if (parts.status) {
+    lines.push(`Status:\n${parts.status.split("\n").slice(0, GIT_STATUS_LINES).join("\n")}`);
+  } else {
+    lines.push("Status: clean");
+  }
+  if (parts.recent) {
+    lines.push(`Recent:\n${parts.recent.split("\n").slice(0, GIT_LOG_LINES).join("\n")}`);
+  }
+  return lines.join("\n");
+}
+
+export async function getGitContext(root = getWorkspaceRoot()): Promise<string> {
+  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], root);
   if (!branch) {
     return "";
   }
-  const status = await git(["status", "--short"]);
-  const parts = [`Branch: ${branch}`];
-  if (status) {
-    parts.push(`Status:\n${status.split("\n").slice(0, 30).join("\n")}`);
-  } else {
-    parts.push("Status: clean");
-  }
-  return parts.join("\n");
+  const [status, recent] = await Promise.all([
+    git(["status", "--short"], root),
+    git(["log", "-5", "--format=%h %s"], root),
+  ]);
+  return formatGitContext({ branch, status, recent });
 }
 
 function globMatches(globs: string, filePath: string): boolean {

@@ -10,7 +10,7 @@
 import * as os from "os";
 import * as path from "path";
 import { getWorkspaceRoot, getRecentFiles } from "./workspaceUtils";
-import { getActiveSelection, getCursorRules, listSkills, getGitContext, listRulesForPrompt } from "./workspaceContext";
+import { getActiveSelection, listSkills, getGitContext, getFileTree, listRulesForPrompt } from "./workspaceContext";
 import { memoryForPrompt } from "./memoryBank";
 
 function shellName(): string {
@@ -52,7 +52,8 @@ export async function buildUserInfoBlock(opts: {
 }): Promise<string> {
   const root = getWorkspaceRoot();
   const now = new Date();
-  const gitInfo = await getGitContext();
+  const enable = opts.enableWorkspaceContext !== false;
+  const [gitInfo, tree] = await Promise.all([getGitContext(root), enable ? getFileTree(root) : Promise.resolve("")]);
   const isRepo = gitInfo ? `Yes, at ${root.replace(/\\/g, "/")}` : "No";
 
   const parts: string[] = [];
@@ -60,7 +61,14 @@ export async function buildUserInfoBlock(opts: {
     `<user_info>\nOS Version: ${process.platform} ${os.release()}\n\nShell: ${shellName()}\n\nWorkspace Path: ${root}\n\nIs directory a git repo: ${isRepo}\n\nToday's date: ${formatDate(now)}\n</user_info>`
   );
 
-  if (opts.enableWorkspaceContext !== false) {
+  if (enable) {
+    if (tree) {
+      parts.push(`<workspace_files>\n${tree}\n</workspace_files>`);
+    }
+    if (gitInfo) {
+      parts.push(`<git>\n${gitInfo}\n</git>`);
+    }
+
     // Rules: always-applied workspace rules + user rules.
     const always = await listRulesForPrompt();
     const userRules = (opts.userRules || "").trim();

@@ -18,7 +18,12 @@
 let root = process.cwd();
 
 export function __setWorkspaceRoot(dir: string): void {
-  root = dir;
+	root = dir;
+}
+
+/** Replace the open-tab list used by getRecentFiles. */
+export function __setTabs(tabs: { input?: { uri?: StubUri } }[]): void {
+	window.tabGroups.all = tabs.length ? [{ tabs }] : [];
 }
 
 class StubUri {

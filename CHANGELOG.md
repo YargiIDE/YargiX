@@ -4,6 +4,19 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-10
+
+### Added
+
+- The cached prompt now includes a compact workspace file tree and git context (branch, short status, last five commits), so the agent sees the layout before it searches
+- The tree honours `.gitignore`, `.cursorignore`, and `.yargixignore` (nested copies apply only under their directory), plus the built-in junk set (`node_modules`, `vendor`, venvs, …)
+- Project-config directories `.github`, `.yargix`, and `.cursor` are listed; `.git`, `.env*` and key material stay hidden
+
+### Fixed
+
+- Recently viewed files in the prompt were absolute filesystem paths; they are workspace-relative again
+- A hung `git` subprocess can no longer stall the first model request (2.5s timeout, stderr discarded)
+
 ## [0.1.3] - 2026-09-04
 
 ### Added
