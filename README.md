@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/243_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -261,6 +261,8 @@ flowchart TD
 
 The **context economy** is what makes long runs survive: history is summarised automatically as the window fills, with a cooldown so it never thrashes, a minimum-gain check so it never summarises for nothing, and a guaranteed trim so a request always fits. Tool schemas are counted against the budget too — an omission that quietly makes most agents optimistic by thousands of tokens.
 
+The cached prefix also carries a **compact file tree** (depth 3, 200 entries) and the current git branch, short status, and last five commits. The tree honours `.gitignore`, `.cursorignore` and `.yargixignore`, skips `node_modules` / `vendor` / venvs, hides `.env` and key files, and still shows `.github`, `.yargix` and `.cursor`.
+
 If the active model dies mid-run — outage, quota, retired model — a **fallback chain** continues on the next configured model instead of losing the work.
 
 <br/>
@@ -289,7 +291,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 243 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable

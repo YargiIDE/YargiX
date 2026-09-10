@@ -18,19 +18,20 @@ export function getWorkspaceRoot(): string {
 	return process.cwd();
 }
 
-/** Recently viewed files (workspace-relative), most recent first. */
-export function getRecentFiles(): string[] {
-	const root = getWorkspaceRoot();
+/** Recently viewed files (workspace-relative, posix), most recent first. */
+export function getRecentFiles(root = getWorkspaceRoot()): string[] {
+	const ws = path.resolve(root);
 	const out: string[] = [];
 	for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
 		const input = tab.input as { uri?: vscode.Uri } | undefined;
 		const uri = input?.uri;
-		if (uri && uri.scheme === "file" && uri.fsPath.startsWith(root)) {
-			const rel = path.relative(root, uri.fsPath).split(path.sep).join("/");
-			if (!out.includes(rel)) {
-				out.push(uri.fsPath);
-			}
+		if (!uri || uri.scheme !== "file") continue;
+		const relative = path.relative(ws, uri.fsPath);
+		if (relative === "" || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) {
+			continue;
 		}
+		const rel = relative.split(path.sep).join("/");
+		if (!out.includes(rel)) out.push(rel);
 	}
 	return out;
 }
