@@ -6,7 +6,9 @@
  * Licensed under the MIT License. See LICENSE file in the project root.
  */
 
+import type { ApprovalActionType } from "../agent/approvalPolicy";
 import type { Mode } from "../agent/types";
+import { parseActionTypes, uniqueTypes } from "./policy";
 
 export const MODES: Mode[] = ["agent", "ask", "plan", "debug", "review", "multitask", "project"];
 
@@ -31,6 +33,12 @@ export interface CliOptions {
   maxSteps: number;
   /** Approve tool actions the policy would otherwise stop on. */
   auto: boolean;
+  /** Action types auto-approved without `--auto` (deny still wins). */
+  allow: ApprovalActionType[];
+  /** Action types always blocked, including under `--auto`. */
+  deny: ApprovalActionType[];
+  /** Exit 3 when any action was blocked. */
+  strict: boolean;
   /** Emit one JSON object per event instead of human-readable text. */
   json: boolean;
   quiet: boolean;
@@ -66,6 +74,10 @@ OPTIONS
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
+      --allow <types>    Auto-approve these action types (repeatable):
+                         shell, edits, delete, mcp, web, outside
+      --deny <types>     Always block these types (wins over --auto / --allow)
+      --strict           Exit 3 if any action was blocked (for CI)
       --json             Emit newline-delimited JSON events, for CI
   -i, --interactive      Open a session instead of answering once
   -q, --quiet            Only print the final answer
@@ -76,11 +88,12 @@ ENVIRONMENT
   YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
 
 EXIT CODES
-  0 success   1 agent error   2 bad usage
+  0 success   1 agent error   2 bad usage   3 denied (--strict)
 
 EXAMPLES
   yargix "explain what this project does" --mode ask
   yargix "add a --verbose flag and update the README" --auto
+  yargix "update the README" --allow edits --strict
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
   cat prompt.txt | yargix --stdin --mode ask`;
@@ -118,6 +131,9 @@ export function parseArgs(
     cwd: process.cwd(),
     maxSteps: 50,
     auto: false,
+    allow: [],
+    deny: [],
+    strict: false,
     json: false,
     quiet: false,
     interactive: false,
@@ -148,6 +164,25 @@ export function parseArgs(
       case "--auto":
         options.auto = true;
         break;
+      case "--strict":
+        options.strict = true;
+        break;
+      case "--allow": {
+        const v = value(arg, argv[++i]);
+        if (!v) break;
+        const parsed = parseActionTypes(v);
+        if ("error" in parsed) errors.push(`${arg}: ${parsed.error}`);
+        else options.allow = uniqueTypes([...options.allow, ...parsed.types]);
+        break;
+      }
+      case "--deny": {
+        const v = value(arg, argv[++i]);
+        if (!v) break;
+        const parsed = parseActionTypes(v);
+        if ("error" in parsed) errors.push(`${arg}: ${parsed.error}`);
+        else options.deny = uniqueTypes([...options.deny, ...parsed.types]);
+        break;
+      }
       case "--json":
         options.json = true;
         break;

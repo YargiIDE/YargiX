@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/234_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -203,6 +203,7 @@ yargix                                        # interactive session
 yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
+yargix "update the README" --allow edits --strict
 yargix --file task.md --output answer.md --auto --timeout 600
 cat prompt.txt | yargix --stdin --mode ask
 ```
@@ -219,16 +220,19 @@ cat prompt.txt | yargix --stdin --mode ask
 | `--system <text>` | Extra instructions for this run |
 | `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
+| `--allow <types>` | Auto-approve only these action types (`shell`, `edits`, `delete`, `mcp`, `web`, `outside`) |
+| `--deny <types>` | Always block these types — wins over `--auto` and `--allow` |
+| `--strict` | Exit `3` if any action was blocked |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `--allow` skips the prompt for those types; `--deny` still blocks even after `/auto on`. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
 
-In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
+In **unattended mode** anything that would ask is denied unless `--auto` or `--allow` covers it, so a pipeline never silently gains write access to a checkout. `--strict` turns those denials into exit code `3` so CI fails instead of going green on a blocked run.
 
 **Environment:** `YARGIX_API_KEY` · `YARGIX_BASE_URL` · `YARGIX_MODEL`
-**Exit codes:** `0` success · `1` agent error · `2` bad usage
+**Exit codes:** `0` success · `1` agent error · `2` bad usage · `3` denied (`--strict`)
 
 There is also a **standalone executable** — no Node installation required:
 
@@ -289,7 +293,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 234 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable

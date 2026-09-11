@@ -32,6 +32,9 @@ test("a bare prompt parses with sensible defaults", () => {
   assert.equal(options.maxSteps, 50);
   assert.equal(options.auto, false, "auto must never be on by default");
   assert.equal(options.json, false);
+  assert.equal(options.strict, false, "strict must never be on by default");
+  assert.deepEqual(options.allow, []);
+  assert.deepEqual(options.deny, []);
 });
 
 test("unquoted words are joined into one prompt", () => {
@@ -79,11 +82,12 @@ test("a flag missing its value is reported", () => {
 });
 
 test("boolean flags set exactly what they say", () => {
-  const { options } = parse(["x", "--auto", "--json", "--quiet", "--anthropic"]);
+  const { options } = parse(["x", "--auto", "--json", "--quiet", "--anthropic", "--strict"]);
   assert.equal(options.auto, true);
   assert.equal(options.json, true);
   assert.equal(options.quiet, true);
   assert.equal(options.anthropic, true);
+  assert.equal(options.strict, true);
 });
 
 test("short aliases match their long forms", () => {
@@ -156,6 +160,9 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--allow/);
+  assert.match(USAGE, /--deny/);
+  assert.match(USAGE, /--strict/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +240,37 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("--allow and --deny parse lists and aliases, and accumulate", () => {
+  const { options, errors } = parse([
+    "x",
+    "--allow",
+    "edits,web",
+    "--allow",
+    "write",
+    "--deny",
+    "shell",
+  ]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(options.allow, ["edits", "web"]);
+  assert.deepEqual(options.deny, ["shell"]);
+});
+
+test("an unknown --allow type is a usage error, not a silent default", () => {
+  const { errors } = parse(["x", "--allow", "sudo"]);
+  assert.match(errors.join(" "), /unknown action type "sudo"/);
+});
+
+test("--allow without a value is reported", () => {
+  assert.match(parse(["x", "--allow"]).errors.join(" "), /--allow needs a value/);
+  assert.match(parse(["x", "--deny", "--strict"]).errors.join(" "), /--deny needs a value/);
+});
+
+test("--auto stays off when only --allow is passed", () => {
+  const { options, errors } = parse(["x", "--allow", "edits", "--strict"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.auto, false);
+  assert.equal(options.strict, true);
+  assert.deepEqual(options.allow, ["edits"]);
 });
