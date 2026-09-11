@@ -17,6 +17,7 @@
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
+import { buildCliPolicy, resolveCliApproval, runExitCode } from "./policy";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -167,6 +168,7 @@ async function main(): Promise<number> {
   let denied = 0;
   let finalText = "";
   let gotResult = false;
+  const policy = buildCliPolicy(options);
   try {
     await runAgent({
       apiBaseUrl: options.baseUrl,
@@ -181,12 +183,13 @@ async function main(): Promise<number> {
       enableFileReading: true,
       enableTerminalSuggestions: isExecutingMode(options.mode),
       enableWorkspaceContext: true,
-      // Nobody can answer a prompt here: --auto approves, otherwise refuse and
-      // tell the model why, so it reports the blocker instead of looping.
-      approve: async (toolName: string) => {
-        if (options.auto) return true;
+      // Nobody can answer a prompt here: --auto / --allow approve, --deny
+      // always blocks, and anything else is refused with a hint.
+      approve: async (toolName: string, input: unknown) => {
+        const resolved = resolveCliApproval(policy, toolName, input, options.cwd, "unattended");
+        if (resolved.reply === true) return true;
         denied++;
-        return { approved: false as const, blockedSubject: `${toolName} (run with --auto to allow it)` };
+        return resolved.reply ?? { approved: false as const, blockedSubject: toolName };
       },
       signal: controller.signal,
       emit: (ev: AgentEvent) => {
@@ -228,9 +231,12 @@ async function main(): Promise<number> {
   }
 
   if (denied && !options.quiet && !options.json) {
-    process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
+    const hint = options.strict
+      ? `- ${denied} action(s) were blocked (exit 3 because --strict).`
+      : `- ${denied} action(s) were blocked. Re-run with --auto or --allow <type> to allow them.`;
+    process.stderr.write(`${hint}\n`);
   }
-  return failed ? 1 : 0;
+  return runExitCode({ failed, denied, strict: options.strict });
 }
 
 /**

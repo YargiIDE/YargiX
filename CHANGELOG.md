@@ -4,6 +4,18 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-11
+
+### Added
+
+- CLI `--allow` / `--deny` for least-privilege unattended runs: auto-approve or hard-block action types (`shell`, `edits`, `delete`, `mcp`, `web`, `outside`) without turning `--auto` on for everything
+- `--strict` exits `3` when any action was blocked, so CI does not go green on a refused write
+- `--deny` wins over `--auto` and `--allow`, including after `/auto on` in an interactive session
+
+### Fixed
+
+- Unattended denials now name the missing `--allow <type>` (or the `--deny` that blocked them) instead of a generic `--auto` hint
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

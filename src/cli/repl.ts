@@ -19,6 +19,7 @@ import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
 import { isIoError, readTextFile, writeTextFile } from "./io";
+import { buildCliPolicy, resolveCliApproval, runExitCode } from "./policy";
 import {
   DEFAULT_SESSION_JSON,
   DEFAULT_SESSION_MD,
@@ -213,6 +214,8 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
 
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
+  if (options.allow.length) out(`allow: ${options.allow.join(", ")}`);
+  if (options.deny.length) out(`deny: ${options.deny.join(", ")} (wins over /auto)`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
 
   let running: AbortController | undefined;
@@ -230,6 +233,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
 
   const queued: string[] = [];
   if (options.prompt) queued.push(options.prompt);
+  let denied = 0;
 
   for (;;) {
     let line: string | null;
@@ -384,7 +388,19 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         history: state.history,
         extraInstructions: state.system || undefined,
         approve: async (toolName: string, input: unknown) => {
-          if (state.auto) return true;
+          const policy = buildCliPolicy({
+            auto: state.auto,
+            allow: options.allow,
+            deny: options.deny,
+          });
+          const resolved = resolveCliApproval(policy, toolName, input, options.cwd, "ask");
+          if (resolved.reply === true) return true;
+          if (resolved.decision === "deny") {
+            denied++;
+            endLine();
+            out(`- blocked ${describeAction(toolName, input)}${resolved.type ? ` (--deny ${resolved.type})` : ""}`);
+            return resolved.reply ?? { approved: false as const, blockedSubject: toolName };
+          }
           endLine();
           const answer = parseApproval(await ask(`  allow ${describeAction(toolName, input)}? [y/N/a] `));
           if (answer === "always") {
@@ -392,6 +408,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
             return true;
           }
           if (answer === "yes") return true;
+          denied++;
           return { approved: false as const, blockedSubject: toolName };
         },
         signal: controller.signal,
@@ -437,5 +454,5 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   rl.off("SIGINT", onInterrupt);
   rl.close();
   out("bye");
-  return 0;
+  return runExitCode({ failed: false, denied, strict: options.strict });
 }
