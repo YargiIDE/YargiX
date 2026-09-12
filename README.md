@@ -218,17 +218,19 @@ cat prompt.txt | yargix --stdin --mode ask
 | `-o, --output <path>` | Write the final answer to a file |
 | `--system <text>` | Extra instructions for this run |
 | `--timeout <sec>` | Abort the run after this many seconds |
+| `--usage-file <path>` | Append a JSONL usage record (default: `.yargix/usage.jsonl`) |
+| `--no-usage` | Do not write a usage record |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session. `/usage` shows token totals for this session and the local ledger.
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 
 **Environment:** `YARGIX_API_KEY` · `YARGIX_BASE_URL` · `YARGIX_MODEL`
-**Exit codes:** `0` success · `1` agent error · `2` bad usage
+**Exit codes:** `0` success · `1` agent error · `2` bad usage · `4` timed out
 
 There is also a **standalone executable** — no Node installation required:
 

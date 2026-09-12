@@ -22,6 +22,10 @@ export interface CliOptions {
   system: string;
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
+  /** Append a usage record when a run finishes. */
+  usage: boolean;
+  /** Ledger path relative to cwd. Empty = `.yargix/usage.jsonl`. */
+  usageFile: string;
   mode: Mode;
   model: string;
   baseUrl: string;
@@ -63,6 +67,8 @@ OPTIONS
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
+      --usage-file <path>  Append a JSONL usage record (default: .yargix/usage.jsonl)
+      --no-usage         Do not write a usage record
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
@@ -76,7 +82,7 @@ ENVIRONMENT
   YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
 
 EXIT CODES
-  0 success   1 agent error   2 bad usage
+  0 success   1 agent error   2 bad usage   4 timed out
 
 EXAMPLES
   yargix "explain what this project does" --mode ask
@@ -111,6 +117,8 @@ export function parseArgs(
     output: "",
     system: "",
     timeout: 0,
+    usage: true,
+    usageFile: "",
     mode: "agent",
     model: env.YARGIX_MODEL ?? "",
     baseUrl: env.YARGIX_BASE_URL ?? "",
@@ -205,6 +213,12 @@ export function parseArgs(
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
+      case "--usage-file":
+        options.usageFile = value(arg, argv[++i], true);
+        break;
+      case "--no-usage":
+        options.usage = false;
+        break;
       default:
         // A lone "-" is the Unix stdin placeholder, not an unknown flag.
         if (arg.startsWith("-") && arg !== "-") errors.push(`unknown option "${arg}"`);
@@ -221,6 +235,7 @@ export function parseArgs(
 
   if (options.help || options.version) return { options, errors: [] };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
+  if (options.usageFile === "-") errors.push("usage path cannot be '-' (pass --no-usage to skip the ledger)");
   if (options.file && options.stdin) errors.push("pass --file or --stdin, not both");
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");

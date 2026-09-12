@@ -4,6 +4,19 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-12
+
+### Added
+
+- CLI usage ledger: each finished run appends one JSON line to `.yargix/usage.jsonl` (override with `--usage-file`, skip with `--no-usage`) so token counts and outcomes can be inspected later
+- Interactive `/usage` (alias `/tokens`) prints this session's totals and the local ledger path
+- Distinct exit code `4` when `--timeout` aborts a run, so CI can retry timeouts without treating them as agent errors
+
+### Fixed
+
+- A one-shot run that is interrupted (Ctrl+C / SIGTERM) now exits `1` instead of looking successful
+- A thrown agent error still writes a usage record, so a crash is visible in the ledger
+
 ## [0.1.3] - 2026-09-04
 
 ### Added
