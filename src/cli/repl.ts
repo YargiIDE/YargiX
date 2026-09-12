@@ -27,6 +27,15 @@ import {
   sessionToMarkdown,
   snapshotSession,
 } from "./session";
+import {
+  appendUsageLine,
+  buildUsageRecord,
+  createUsageTracker,
+  formatUsageSummary,
+  readUsageLog,
+  usageLogPath,
+  type UsageRecord,
+} from "./usage";
 
 export const BANNER = `YargiX interactive session. Type /help for commands, /exit to leave.`;
 
@@ -44,6 +53,7 @@ export const HELP = `Commands
   /save [path]        write the conversation as JSON (default: .yargix/session.json)
   /load [path]        restore a JSON session (default: .yargix/session.json)
   /export [path]      write a markdown transcript (default: .yargix/session.md)
+  /usage              token totals for this session (and the local ledger)
 
 Anything else is sent to the agent. Ctrl+C stops the current run; Ctrl+D exits.`;
 
@@ -63,6 +73,7 @@ export type Command =
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
   | { kind: "export"; value: string }
+  | { kind: "usage" }
   | { kind: "unknown"; name: string };
 
 /**
@@ -116,6 +127,9 @@ export function parseCommand(line: string): Command {
       return { kind: "load", value };
     case "export":
       return { kind: "export", value };
+    case "usage":
+    case "tokens":
+      return { kind: "usage" };
     default:
       return { kind: "unknown", name };
   }
@@ -205,6 +219,8 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   };
 
   const reader = new LineReader(rl);
+  const sessionUsage: UsageRecord[] = [];
+  const ledgerPath = usageLogPath(options.usageFile);
   const out = (s: string) => process.stdout.write(`${s}\n`);
   const ask = async (q: string): Promise<string> => {
     process.stdout.write(q);
@@ -348,6 +364,22 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       out(isIoError(written) ? `- ${written.error}` : `- exported ${written.path}`);
       continue;
     }
+    if (cmd.kind === "usage") {
+      if (!sessionUsage.length) {
+        out("- no runs recorded this session");
+      } else {
+        for (const line of formatUsageSummary(sessionUsage).split("\n")) out(`- ${line}`);
+      }
+      if (options.usage) {
+        const loaded = await readUsageLog(ledgerPath, options.cwd);
+        if (isIoError(loaded)) out(`- ledger: ${loaded.error}`);
+        else if (loaded.records.length) out(`- ledger: ${loaded.records.length} run(s) in ${loaded.path}`);
+        else out(`- ledger: ${ledgerPath} (empty)`);
+      } else {
+        out("- ledger: off (--no-usage)");
+      }
+      continue;
+    }
     if (cmd.kind === "unknown") {
       out(`- unknown command "/${cmd.name}" (try /help)`);
       continue;
@@ -375,6 +407,11 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     let finalText = "";
     let gotResult = false;
+    let durationMs = 0;
+    let failed = false;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const usage = createUsageTracker();
 
     try {
       await deps.runAgent({
@@ -396,6 +433,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         },
         signal: controller.signal,
         emit: (ev: AgentEvent) => {
+          if (ev.type === "usage") usage.add(ev);
+          if (ev.type === "run-status" && ev.status === "cancelled") cancelled = true;
+          if (ev.type === "run-status" && ev.status === "error") failed = true;
           if (ev.type === "text-delta") {
             process.stdout.write(ev.text);
             midLine = !ev.text.endsWith("\n");
@@ -411,15 +451,18 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
           if (ev.type === "run-result") {
             finalText = ev.text;
             gotResult = true;
+            durationMs = ev.durationMs;
             return;
           }
           if (ev.type === "error") {
+            failed = true;
             endLine();
             process.stdout.write(`x ${ev.message}\n`);
           }
         },
       });
     } catch (error) {
+      failed = true;
       endLine();
       out(`x ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -428,6 +471,19 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       running = undefined;
     }
     if (timedOut) out(`- timed out after ${options.timeout}s`);
+    const record = buildUsageRecord({
+      startedAt,
+      durationMs: gotResult ? durationMs : undefined,
+      model: state.model,
+      mode: state.mode,
+      totals: usage.totals(),
+      result: { timedOut, failed, cancelled },
+    });
+    sessionUsage.push(record);
+    if (options.usage) {
+      const written = await appendUsageLine(ledgerPath, options.cwd, record);
+      if (isIoError(written)) out(`- usage log skipped: ${written.error}`);
+    }
     if (options.output && gotResult) {
       const written = await writeTextFile(options.output, options.cwd, finalText);
       if (isIoError(written)) out(`- ${written.error}`);

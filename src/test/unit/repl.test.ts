@@ -189,6 +189,7 @@ test("the help text documents every command the parser accepts", () => {
     "/save",
     "/load",
     "/export",
+    "/usage",
   ]) {
     assert.ok(HELP.includes(name), `help should mention ${name}`);
   }
@@ -201,6 +202,12 @@ test("save, load and export carry an optional path", () => {
   assert.deepEqual(parseCommand("/load"), { kind: "load", value: "" });
   assert.deepEqual(parseCommand("/load notes/run.json"), { kind: "load", value: "notes/run.json" });
   assert.deepEqual(parseCommand("/export out.md"), { kind: "export", value: "out.md" });
+});
+
+test("usage is a command, not a prompt", () => {
+  assert.deepEqual(parseCommand("/usage"), { kind: "usage" });
+  assert.deepEqual(parseCommand("/tokens"), { kind: "usage" });
+  assert.notEqual(parseCommand("/usage").kind, "prompt");
 });
 
 test("system shows, sets, and is not sent to the model as a prompt", () => {

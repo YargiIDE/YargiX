@@ -156,6 +156,9 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--usage-file/);
+  assert.match(USAGE, /--no-usage/);
+  assert.match(USAGE, /4 timed out/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -226,6 +229,22 @@ test("timeout ignores nonsense the way max-steps does", () => {
   assert.equal(parse(["x", "--timeout", "abc"]).options.timeout, 0);
   assert.equal(parse(["x", "--timeout", "0"]).options.timeout, 0);
   assert.equal(parse(["x", "--timeout", "-3"]).options.timeout, 0);
+});
+
+test("usage is on by default and --no-usage turns it off", () => {
+  assert.equal(parse(["x"]).options.usage, true);
+  assert.equal(parse(["x", "--no-usage"]).options.usage, false);
+});
+
+test("--usage-file sets the ledger path", () => {
+  const { options, errors } = parse(["x", "--usage-file", "ci/tokens.jsonl"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.usageFile, "ci/tokens.jsonl");
+});
+
+test("--usage-file - is refused", () => {
+  const { errors } = parse(["x", "--usage-file", "-"]);
+  assert.match(errors.join(" "), /usage path cannot be/);
 });
 
 test("--file and -i together is a session that starts from the file", () => {

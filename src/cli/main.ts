@@ -17,6 +17,16 @@
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
+import {
+  EXIT_ERROR,
+  EXIT_OK,
+  EXIT_USAGE,
+  appendUsageLine,
+  buildUsageRecord,
+  createUsageTracker,
+  runExitCode,
+  usageLogPath,
+} from "./usage";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -78,15 +88,15 @@ async function main(): Promise<number> {
 
   if (options.help) {
     process.stdout.write(`${USAGE}\n`);
-    return 0;
+    return EXIT_OK;
   }
   if (options.version) {
     process.stdout.write(`yargix ${VERSION}\n`);
-    return 0;
+    return EXIT_OK;
   }
   if (errors.length) {
     process.stderr.write(`${errors.map((e) => `error: ${e}`).join("\n")}\n\n${USAGE}\n`);
-    return 2;
+    return EXIT_USAGE;
   }
 
   const resolved = await resolvePrompt(options);
@@ -164,9 +174,13 @@ async function main(): Promise<number> {
   }
 
   let failed = false;
+  let cancelled = false;
   let denied = 0;
   let finalText = "";
   let gotResult = false;
+  let durationMs = 0;
+  const startedAt = Date.now();
+  const usage = createUsageTracker();
   try {
     await runAgent({
       apiBaseUrl: options.baseUrl,
@@ -192,16 +206,19 @@ async function main(): Promise<number> {
       emit: (ev: AgentEvent) => {
         if (ev.type === "error") failed = true;
         if (ev.type === "run-status" && ev.status === "error") failed = true;
+        if (ev.type === "run-status" && ev.status === "cancelled") cancelled = true;
+        if (ev.type === "usage") usage.add(ev);
         if (ev.type === "run-result") {
           finalText = ev.text;
           gotResult = true;
+          durationMs = ev.durationMs;
         }
         writeEvent(ev);
       },
     });
   } catch (error) {
     process.stderr.write(`x ${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
+    failed = true;
   } finally {
     if (timeoutTimer) clearTimeout(timeoutTimer);
     process.off("SIGINT", onSignal);
@@ -214,13 +231,15 @@ async function main(): Promise<number> {
       process.stderr.write(`- timed out after ${options.timeout}s\n`);
     }
     failed = true;
+  } else if (controller.signal.aborted) {
+    cancelled = true;
   }
 
   if (options.output && !timedOut && gotResult) {
     const written = await writeTextFile(options.output, options.cwd, finalText);
     if (isIoError(written)) {
       process.stderr.write(`error: ${written.error}\n`);
-      return 1;
+      return EXIT_ERROR;
     }
     if (!options.quiet && !options.json) {
       process.stderr.write(`- wrote ${written.path}\n`);
@@ -230,7 +249,29 @@ async function main(): Promise<number> {
   if (denied && !options.quiet && !options.json) {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
-  return failed ? 1 : 0;
+
+  const result = { timedOut, failed, cancelled };
+  if (options.usage) {
+    const record = buildUsageRecord({
+      startedAt,
+      durationMs: gotResult ? durationMs : undefined,
+      model: options.model,
+      mode: options.mode,
+      totals: usage.totals(),
+      result,
+    });
+    const written = await appendUsageLine(usageLogPath(options.usageFile), options.cwd, record);
+    if (isIoError(written)) {
+      if (!options.quiet && !options.json) {
+        process.stderr.write(`- usage log skipped: ${written.error}\n`);
+      }
+    } else if (!options.quiet && !options.json) {
+      const t = record.totalTokens;
+      process.stderr.write(`- recorded ${t} token(s) in ${written.path}\n`);
+    }
+  }
+
+  return runExitCode(result);
 }
 
 /**
@@ -241,13 +282,13 @@ async function resolvePrompt(options: CliOptions): Promise<string | number> {
   const source = promptSource(options);
   if ("error" in source) {
     process.stderr.write(`error: ${source.error}\n\n${USAGE}\n`);
-    return 2;
+    return EXIT_USAGE;
   }
   if (source.kind === "none") return "";
   const loaded = await loadPrompt(source, options.cwd);
   if (isIoError(loaded)) {
     process.stderr.write(`error: ${loaded.error}\n`);
-    return 2;
+    return EXIT_USAGE;
   }
   return loaded.text;
 }
@@ -285,5 +326,5 @@ main()
   .then(finish)
   .catch((error) => {
     process.stderr.write(`x ${error instanceof Error ? error.stack || error.message : String(error)}\n`);
-    finish(1);
+    finish(EXIT_ERROR);
   });
