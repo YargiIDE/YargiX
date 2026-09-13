@@ -4,6 +4,14 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-13
+
+### Added
+
+- CLI `--retry <n>` re-runs a one-shot (or a REPL turn) after a transient provider error (429, 5xx, connection reset) with exponential backoff
+- Retry is skipped if a mutating tool already started, the user aborted, or the wall-clock `--timeout` fired — so a CI job cannot double-apply an edit
+- CLI `--fallback-model <id>` (repeatable or comma-separated; also `YARGIX_FALLBACK_MODELS`) switches to the next model when the primary fails before producing output
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

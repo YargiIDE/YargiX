@@ -17,6 +17,7 @@
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
+import { createFallbackResolver, isUnsafeToRetryTool, runWithRetries } from "./retry";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -97,6 +98,12 @@ async function main(): Promise<number> {
   // Imported after the shim is configured: these modules read the workspace
   // root at import time through the aliased `vscode` module.
   const { runAgent } = await import("../agent/loop.js");
+  const resolveFallback = createFallbackResolver({
+    models: options.fallbackModels,
+    apiBaseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    anthropic: options.anthropic,
+  });
 
   // No prompt on the command line means an interactive session.
   if (options.interactive) {
@@ -113,6 +120,7 @@ async function main(): Promise<number> {
           enableFileReading: true,
           enableTerminalSuggestions: true,
           enableWorkspaceContext: true,
+          resolveFallback,
           ...o,
         } as Parameters<typeof runAgent>[0]),
       toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
@@ -168,37 +176,89 @@ async function main(): Promise<number> {
   let finalText = "";
   let gotResult = false;
   try {
-    await runAgent({
-      apiBaseUrl: options.baseUrl,
-      apiKey: options.apiKey,
-      model: options.model,
-      anthropic: options.anthropic,
-      mode: options.mode,
-      prompt: options.prompt,
-      extraInstructions: options.system || undefined,
-      history: [],
-      maxSteps: options.maxSteps,
-      enableFileReading: true,
-      enableTerminalSuggestions: isExecutingMode(options.mode),
-      enableWorkspaceContext: true,
-      // Nobody can answer a prompt here: --auto approves, otherwise refuse and
-      // tell the model why, so it reports the blocker instead of looping.
-      approve: async (toolName: string) => {
-        if (options.auto) return true;
-        denied++;
-        return { approved: false as const, blockedSubject: `${toolName} (run with --auto to allow it)` };
-      },
+    const shot = await runWithRetries({
+      retries: options.retry,
       signal: controller.signal,
-      emit: (ev: AgentEvent) => {
-        if (ev.type === "error") failed = true;
-        if (ev.type === "run-status" && ev.status === "error") failed = true;
-        if (ev.type === "run-result") {
-          finalText = ev.text;
-          gotResult = true;
+      timedOut: () => timedOut,
+      run: async () => {
+        const attempt = {
+          failed: false,
+          denied: 0,
+          finalText: "",
+          gotResult: false,
+          mutated: false,
+          aborted: false,
+          error: undefined as string | undefined,
+        };
+        announced.clear();
+        try {
+          await runAgent({
+            apiBaseUrl: options.baseUrl,
+            apiKey: options.apiKey,
+            model: options.model,
+            anthropic: options.anthropic,
+            mode: options.mode,
+            prompt: options.prompt,
+            extraInstructions: options.system || undefined,
+            history: [],
+            maxSteps: options.maxSteps,
+            enableFileReading: true,
+            enableTerminalSuggestions: isExecutingMode(options.mode),
+            enableWorkspaceContext: true,
+            resolveFallback,
+            // Nobody can answer a prompt here: --auto approves, otherwise refuse and
+            // tell the model why, so it reports the blocker instead of looping.
+            approve: async (toolName: string) => {
+              if (options.auto) return true;
+              attempt.denied++;
+              return { approved: false as const, blockedSubject: `${toolName} (run with --auto to allow it)` };
+            },
+            signal: controller.signal,
+            emit: (ev: AgentEvent) => {
+              if (ev.type === "tool-call-started" && isUnsafeToRetryTool(ev.name)) {
+                attempt.mutated = true;
+              }
+              if (ev.type === "error") {
+                attempt.failed = true;
+                attempt.error = ev.message;
+              }
+              if (ev.type === "run-status" && ev.status === "error") {
+                attempt.failed = true;
+                attempt.error ??= "run failed";
+              }
+              if (ev.type === "run-result") {
+                attempt.finalText = ev.text;
+                attempt.gotResult = true;
+              }
+              writeEvent(ev);
+            },
+          });
+        } catch (error) {
+          attempt.failed = true;
+          attempt.error = error instanceof Error ? error.message : String(error);
+          if (controller.signal.aborted) attempt.aborted = true;
+          if (!options.json) {
+            endLine();
+            process.stderr.write(`x ${attempt.error}\n`);
+          }
         }
-        writeEvent(ev);
+        if (controller.signal.aborted) attempt.aborted = true;
+        return attempt;
+      },
+      inspect: (attempt) => ({
+        ok: !attempt.failed && attempt.gotResult,
+        mutated: attempt.mutated,
+        aborted: attempt.aborted,
+        error: attempt.error,
+      }),
+      onRetry: ({ attempt, max, delayMs, error }) => {
+        writeEvent({ type: "retry", attempt, max, delayMs, error });
       },
     });
+    failed = shot.failed;
+    denied = shot.denied;
+    finalText = shot.finalText;
+    gotResult = shot.gotResult;
   } catch (error) {
     process.stderr.write(`x ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;

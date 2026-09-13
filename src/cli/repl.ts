@@ -19,6 +19,7 @@ import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
 import { isIoError, readTextFile, writeTextFile } from "./io";
+import { isUnsafeToRetryTool, runWithRetries } from "./retry";
 import {
   DEFAULT_SESSION_JSON,
   DEFAULT_SESSION_MD,
@@ -375,50 +376,99 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     let finalText = "";
     let gotResult = false;
+    const historyAtStart = state.history.length;
 
     try {
-      await deps.runAgent({
-        model: state.model,
-        mode: state.mode,
-        prompt: cmd.text,
-        history: state.history,
-        extraInstructions: state.system || undefined,
-        approve: async (toolName: string, input: unknown) => {
-          if (state.auto) return true;
-          endLine();
-          const answer = parseApproval(await ask(`  allow ${describeAction(toolName, input)}? [y/N/a] `));
-          if (answer === "always") {
-            state.auto = true;
-            return true;
-          }
-          if (answer === "yes") return true;
-          return { approved: false as const, blockedSubject: toolName };
-        },
+      const shot = await runWithRetries({
+        retries: options.retry,
         signal: controller.signal,
-        emit: (ev: AgentEvent) => {
-          if (ev.type === "text-delta") {
-            process.stdout.write(ev.text);
-            midLine = !ev.text.endsWith("\n");
-            return;
-          }
-          if (ev.type === "tool-call-started") {
-            if (announced.has(ev.callId)) return;
-            announced.add(ev.callId);
+        timedOut: () => timedOut,
+        run: async () => {
+          const attempt = {
+            ok: false,
+            mutated: false,
+            aborted: false,
+            error: undefined as string | undefined,
+            finalText: "",
+            gotResult: false,
+          };
+          announced.clear();
+          try {
+            await deps.runAgent({
+              model: state.model,
+              mode: state.mode,
+              prompt: cmd.text,
+              history: state.history,
+              extraInstructions: state.system || undefined,
+              approve: async (toolName: string, input: unknown) => {
+                if (state.auto) return true;
+                endLine();
+                const answer = parseApproval(await ask(`  allow ${describeAction(toolName, input)}? [y/N/a] `));
+                if (answer === "always") {
+                  state.auto = true;
+                  return true;
+                }
+                if (answer === "yes") return true;
+                return { approved: false as const, blockedSubject: toolName };
+              },
+              signal: controller.signal,
+              emit: (ev: AgentEvent) => {
+                if (ev.type === "tool-call-started" && isUnsafeToRetryTool(ev.name)) {
+                  attempt.mutated = true;
+                }
+                if (ev.type === "text-delta") {
+                  process.stdout.write(ev.text);
+                  midLine = !ev.text.endsWith("\n");
+                  return;
+                }
+                if (ev.type === "retry") {
+                  endLine();
+                  process.stdout.write(`- retrying (${ev.attempt}/${ev.max})\n`);
+                  return;
+                }
+                if (ev.type === "tool-call-started") {
+                  if (announced.has(ev.callId)) return;
+                  announced.add(ev.callId);
+                  endLine();
+                  process.stdout.write(`- ${ev.name}\n`);
+                  return;
+                }
+                if (ev.type === "run-result") {
+                  attempt.finalText = ev.text;
+                  attempt.gotResult = true;
+                  return;
+                }
+                if (ev.type === "error") {
+                  attempt.error = ev.message;
+                  endLine();
+                  process.stdout.write(`x ${ev.message}\n`);
+                }
+              },
+            });
+            attempt.ok = attempt.gotResult && !attempt.error;
+          } catch (error) {
+            attempt.error = error instanceof Error ? error.message : String(error);
+            if (controller.signal.aborted) attempt.aborted = true;
             endLine();
-            process.stdout.write(`- ${ev.name}\n`);
-            return;
+            out(`x ${attempt.error}`);
           }
-          if (ev.type === "run-result") {
-            finalText = ev.text;
-            gotResult = true;
-            return;
-          }
-          if (ev.type === "error") {
-            endLine();
-            process.stdout.write(`x ${ev.message}\n`);
-          }
+          if (controller.signal.aborted) attempt.aborted = true;
+          if (state.history.length !== historyAtStart) attempt.mutated = true;
+          return attempt;
+        },
+        inspect: (attempt) => ({
+          ok: attempt.ok,
+          mutated: attempt.mutated,
+          aborted: attempt.aborted,
+          error: attempt.error,
+        }),
+        onRetry: ({ attempt, max }) => {
+          endLine();
+          out(`- retrying (${attempt}/${max})`);
         },
       });
+      finalText = shot.finalText;
+      gotResult = shot.gotResult;
     } catch (error) {
       endLine();
       out(`x ${error instanceof Error ? error.message : String(error)}`);
