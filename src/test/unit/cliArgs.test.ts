@@ -19,8 +19,8 @@ import assert from "node:assert/strict";
 
 import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
 
-const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
-const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
+const ENV: NodeJS.ProcessEnv = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
+const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env, tty);
 
 // ------------------------------------------------------------------ basics
 
@@ -151,11 +151,14 @@ test("the usage text documents every mode and the --auto requirement", () => {
   }
   assert.match(USAGE, /--auto/);
   assert.match(USAGE, /YARGIX_API_KEY/);
+  assert.match(USAGE, /YARGIX_FALLBACK_MODELS/);
   assert.match(USAGE, /--file/);
   assert.match(USAGE, /--stdin/);
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--retry/);
+  assert.match(USAGE, /--fallback-model/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +236,31 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("--retry defaults to zero extra attempts", () => {
+  assert.equal(parse(["x"]).options.retry, 0);
+  assert.equal(parse(["x", "--retry", "3"]).options.retry, 3);
+  assert.equal(parse(["x", "--retry", "0"]).options.retry, 0);
+});
+
+test("--retry ignores nonsense the way timeout does", () => {
+  assert.equal(parse(["x", "--retry", "abc"]).options.retry, 0);
+  assert.equal(parse(["x", "--retry", "-1"]).options.retry, 0);
+});
+
+test("--fallback-model accepts repeats and comma-separated ids", () => {
+  const { options, errors } = parse(["x", "--fallback-model", "a,b", "--fallback-model", "c"]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(options.fallbackModels, ["a", "b", "c"]);
+});
+
+test("YARGIX_FALLBACK_MODELS seeds the fallback list", () => {
+  const { options } = parse(["x"], { ...ENV, YARGIX_FALLBACK_MODELS: "spare, last" });
+  assert.deepEqual(options.fallbackModels, ["spare", "last"]);
+});
+
+test("an empty --fallback-model is an error", () => {
+  const { errors } = parse(["x", "--fallback-model", "  , "]);
+  assert.match(errors.join(" "), /fallback-model needs a model id/);
 });

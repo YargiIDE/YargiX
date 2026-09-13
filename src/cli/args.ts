@@ -7,6 +7,7 @@
  */
 
 import type { Mode } from "../agent/types";
+import { DEFAULT_RETRY, parseRetryCount, splitModelIds } from "./retry";
 
 export const MODES: Mode[] = ["agent", "ask", "plan", "debug", "review", "multitask", "project"];
 
@@ -22,8 +23,15 @@ export interface CliOptions {
   system: string;
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
+  /**
+   * Extra whole-run attempts after a transient provider error, only when
+   * the attempt has not started a mutating tool. 0 = one try.
+   */
+  retry: number;
   mode: Mode;
   model: string;
+  /** Other model ids to try if the primary fails before producing output. */
+  fallbackModels: string[];
   baseUrl: string;
   apiKey: string;
   anthropic?: boolean;
@@ -63,6 +71,10 @@ OPTIONS
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
+      --retry <n>        Extra attempts on a transient provider error when
+                         the workspace has not been changed (default: 0)
+      --fallback-model   Model to switch to if the primary fails before it
+                         produces output. Repeatable, or comma-separated
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
@@ -73,7 +85,7 @@ OPTIONS
   -V, --version          Show the version
 
 ENVIRONMENT
-  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
+  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL, YARGIX_FALLBACK_MODELS
 
 EXIT CODES
   0 success   1 agent error   2 bad usage
@@ -83,6 +95,7 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
+  yargix "fix the build" --auto --retry 3 --fallback-model local-backup
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
@@ -111,8 +124,10 @@ export function parseArgs(
     output: "",
     system: "",
     timeout: 0,
+    retry: DEFAULT_RETRY,
     mode: "agent",
     model: env.YARGIX_MODEL ?? "",
+    fallbackModels: splitModelIds(env.YARGIX_FALLBACK_MODELS),
     baseUrl: env.YARGIX_BASE_URL ?? "",
     apiKey: env.YARGIX_API_KEY ?? "",
     cwd: process.cwd(),
@@ -205,6 +220,16 @@ export function parseArgs(
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
+      case "--retry":
+        options.retry = parseRetryCount(value(arg, argv[++i]), options.retry);
+        break;
+      case "--fallback-model": {
+        const raw = value(arg, argv[++i]);
+        const added = splitModelIds(raw);
+        if (raw && !added.length) errors.push("--fallback-model needs a model id");
+        else options.fallbackModels.push(...added);
+        break;
+      }
       default:
         // A lone "-" is the Unix stdin placeholder, not an unknown flag.
         if (arg.startsWith("-") && arg !== "-") errors.push(`unknown option "${arg}"`);
