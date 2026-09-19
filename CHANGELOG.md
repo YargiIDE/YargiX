@@ -4,6 +4,20 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-19
+
+### Added
+
+- CLI `--attach <path>` pins files onto the first user turn (repeatable or comma-separated), so CI can show the model the exact fixtures without waiting for a Read
+- `--system-file <path>` loads extra instructions from a file and merges them ahead of `--system`
+- Interactive `/attach [path]` queues files for the next prompt (`/attach clear` drops them)
+- Markdown session export lists attachment names (not bodies) on user turns
+
+### Fixed
+
+- A missing, empty, binary, directory, or oversized attach fails with exit 2 instead of starting a run that silently omitted the file
+- `--attach -` and `--system-file -` are refused so they cannot steal stdin from `--file` / `--stdin`
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

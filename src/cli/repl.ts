@@ -16,8 +16,9 @@
  */
 
 import * as readline from "readline";
-import type { AgentEvent, Mode, Step } from "../agent/types";
+import type { AgentEvent, Attachment, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
+import { describeAttachment, loadAttachments, splitAttachArgs } from "./attach";
 import { isIoError, readTextFile, writeTextFile } from "./io";
 import {
   DEFAULT_SESSION_JSON,
@@ -38,6 +39,7 @@ export const HELP = `Commands
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
   /system [text]      extra instructions for this session (/system clear to drop)
+  /attach [path]      pin file(s) onto the next prompt (/attach clear to drop)
   /history            how much conversation is being carried
   /cwd                show the working directory
   /tools              list the tools available in this mode
@@ -60,6 +62,7 @@ export type Command =
   | { kind: "model"; value: string }
   | { kind: "auto"; value?: boolean }
   | { kind: "system"; value: string }
+  | { kind: "attach"; value: string }
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
   | { kind: "export"; value: string }
@@ -110,6 +113,8 @@ export function parseCommand(line: string): Command {
     }
     case "system":
       return { kind: "system", value };
+    case "attach":
+      return { kind: "attach", value };
     case "save":
       return { kind: "save", value };
     case "load":
@@ -182,6 +187,8 @@ export interface ReplDeps {
   /** Injected so the REPL can be exercised without loading the whole agent. */
   runAgent: (opts: Record<string, unknown>) => Promise<void>;
   toolNamesFor: (mode: Mode) => string[];
+  /** `--attach` files wait here until the next prompt consumes them. */
+  initialAttachments?: Attachment[];
 }
 
 interface SessionState {
@@ -190,6 +197,7 @@ interface SessionState {
   auto: boolean;
   system: string;
   history: Step[];
+  pendingAttachments: Attachment[];
 }
 
 /** Run the interactive session until the user leaves. Resolves with an exit code. */
@@ -202,6 +210,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     system: options.system,
     // Mutated in place by the agent, which is what carries the conversation.
     history: [],
+    pendingAttachments: deps.initialAttachments ? deps.initialAttachments.slice() : [],
   };
 
   const reader = new LineReader(rl);
@@ -214,6 +223,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
+  if (state.pendingAttachments.length) {
+    out(`attached: ${state.pendingAttachments.map((a) => a.name).join(", ")}`);
+  }
 
   let running: AbortController | undefined;
   // Ctrl+C stops the current run rather than killing the session.
@@ -252,6 +264,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     if (cmd.kind === "clear") {
       state.history.length = 0;
+      state.pendingAttachments.length = 0;
       out("- conversation cleared");
       continue;
     }
@@ -303,6 +316,34 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       }
       state.system = v;
       out("- system instructions updated");
+      continue;
+    }
+    if (cmd.kind === "attach") {
+      const v = cmd.value.trim();
+      if (!v) {
+        out(
+          state.pendingAttachments.length
+            ? `- pending: ${state.pendingAttachments.map((a) => describeAttachment(a)).join(", ")}`
+            : "- pending: (none)",
+        );
+        continue;
+      }
+      if (v.toLowerCase() === "clear" || v === "-") {
+        state.pendingAttachments.length = 0;
+        out("- attachments cleared");
+        continue;
+      }
+      const loaded = await loadAttachments(splitAttachArgs(v), options.cwd);
+      if (isIoError(loaded)) {
+        out(`- ${loaded.error}`);
+        continue;
+      }
+      if (!loaded.attachments.length) {
+        out("- nothing to attach");
+        continue;
+      }
+      state.pendingAttachments.push(...loaded.attachments);
+      out(`- attached ${loaded.attachments.map((a) => describeAttachment(a)).join(", ")}`);
       continue;
     }
     if (cmd.kind === "save") {
@@ -376,11 +417,13 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     let finalText = "";
     let gotResult = false;
 
+    const attachments = state.pendingAttachments.splice(0);
     try {
       await deps.runAgent({
         model: state.model,
         mode: state.mode,
         prompt: cmd.text,
+        attachments: attachments.length ? attachments : undefined,
         history: state.history,
         extraInstructions: state.system || undefined,
         approve: async (toolName: string, input: unknown) => {

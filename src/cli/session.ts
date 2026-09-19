@@ -110,6 +110,9 @@ export function sessionToMarkdown(snap: SessionSnapshot): string {
     if (step.kind === "user") {
       if (step.synthetic) continue;
       lines.push("## User", "", step.text, "");
+      if (step.attachments?.length) {
+        lines.push(`- attached: ${step.attachments.map((a) => a.name).join(", ")}`, "");
+      }
     } else if (step.kind === "assistant") {
       if (step.text.trim()) lines.push("## Assistant", "", step.text, "");
       for (const call of step.calls) {
