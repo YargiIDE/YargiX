@@ -16,8 +16,9 @@
 
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
-import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
-import type { AgentEvent } from "../agent/types";
+import { loadAttachments, mergeSystem } from "./attach";
+import { isIoError, loadPrompt, promptSource, readTextFile, writeTextFile } from "./io";
+import type { AgentEvent, Attachment } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
 const VERSION = "0.1.0";
@@ -93,6 +94,10 @@ async function main(): Promise<number> {
   if (typeof resolved === "number") return resolved;
   options.prompt = resolved;
 
+  const extras = await resolveExtras(options);
+  if (typeof extras === "number") return extras;
+  options.system = extras.system;
+
   configureShim({ root: options.cwd, settings: shimSettings(options) });
   // Imported after the shim is configured: these modules read the workspace
   // root at import time through the aliased `vscode` module.
@@ -116,6 +121,7 @@ async function main(): Promise<number> {
           ...o,
         } as Parameters<typeof runAgent>[0]),
       toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
+      initialAttachments: extras.attachments,
     });
   }
 
@@ -168,6 +174,10 @@ async function main(): Promise<number> {
   let finalText = "";
   let gotResult = false;
   try {
+    if (extras.attachments.length && !options.quiet && !options.json) {
+      process.stderr.write(`- attached ${extras.attachments.map((a) => a.name).join(", ")}\n`);
+    }
+
     await runAgent({
       apiBaseUrl: options.baseUrl,
       apiKey: options.apiKey,
@@ -175,6 +185,7 @@ async function main(): Promise<number> {
       anthropic: options.anthropic,
       mode: options.mode,
       prompt: options.prompt,
+      attachments: extras.attachments.length ? extras.attachments : undefined,
       extraInstructions: options.system || undefined,
       history: [],
       maxSteps: options.maxSteps,
@@ -231,6 +242,30 @@ async function main(): Promise<number> {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * Load `--system-file` and `--attach` before the run starts.
+ * Failures are usage errors (exit 2): a missing fixture must not become a silent empty attach.
+ */
+async function resolveExtras(
+  options: CliOptions,
+): Promise<{ system: string; attachments: Attachment[] } | number> {
+  let system = options.system;
+  if (options.systemFile) {
+    const loaded = await readTextFile(options.systemFile, options.cwd, "system file");
+    if (isIoError(loaded)) {
+      process.stderr.write(`error: ${loaded.error}\n`);
+      return 2;
+    }
+    system = mergeSystem(loaded.text, options.system);
+  }
+  const attached = await loadAttachments(options.attach, options.cwd);
+  if (isIoError(attached)) {
+    process.stderr.write(`error: ${attached.error}\n`);
+    return 2;
+  }
+  return { system, attachments: attached.attachments };
 }
 
 /**

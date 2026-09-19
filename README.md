@@ -204,6 +204,7 @@ yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
+yargix "compare these" --attach expected.json --attach got.json --mode review
 cat prompt.txt | yargix --stdin --mode ask
 ```
 
@@ -217,13 +218,15 @@ cat prompt.txt | yargix --stdin --mode ask
 | `--stdin` | Read the prompt from stdin (must be piped) |
 | `-o, --output <path>` | Write the final answer to a file |
 | `--system <text>` | Extra instructions for this run |
+| `--system-file <path>` | Extra instructions from a file (merged with `--system`) |
+| `--attach <path>` | Pin a file onto the first turn (repeatable, or `a,b`) |
 | `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session. `/attach` pins files onto the next prompt the same way `--attach` does for a one-shot run.
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 

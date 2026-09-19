@@ -156,6 +156,8 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--attach/);
+  assert.match(USAGE, /--system-file/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +235,22 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("--attach is repeatable and accepts a comma list", () => {
+  const { options, errors } = parse(["x", "--attach", "a.ts", "--attach", "b.md,c.json"]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(options.attach, ["a.ts", "b.md", "c.json"]);
+});
+
+test("--system-file parses next to --system", () => {
+  const { options, errors } = parse(["x", "--system-file", "rules.md", "--system", "be brief"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.systemFile, "rules.md");
+  assert.equal(options.system, "be brief");
+});
+
+test("--attach - and --system-file - are refused", () => {
+  assert.match(parse(["x", "--attach", "-"]).errors.join(" "), /attach path cannot be/);
+  assert.match(parse(["x", "--system-file", "-"]).errors.join(" "), /system-file path cannot be/);
 });

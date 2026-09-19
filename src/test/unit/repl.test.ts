@@ -183,6 +183,7 @@ test("the help text documents every command the parser accepts", () => {
     "/model",
     "/auto",
     "/system",
+    "/attach",
     "/history",
     "/cwd",
     "/tools",
@@ -208,4 +209,11 @@ test("system shows, sets, and is not sent to the model as a prompt", () => {
   assert.deepEqual(parseCommand("/system be terse"), { kind: "system", value: "be terse" });
   assert.deepEqual(parseCommand("/system clear"), { kind: "system", value: "clear" });
   assert.notEqual(parseCommand("/system be terse").kind, "prompt");
+});
+
+test("attach carries an optional path and is not sent to the model", () => {
+  assert.deepEqual(parseCommand("/attach"), { kind: "attach", value: "" });
+  assert.deepEqual(parseCommand("/attach notes.md extra.ts"), { kind: "attach", value: "notes.md extra.ts" });
+  assert.deepEqual(parseCommand("/attach clear"), { kind: "attach", value: "clear" });
+  assert.notEqual(parseCommand("/attach notes.md").kind, "prompt");
 });

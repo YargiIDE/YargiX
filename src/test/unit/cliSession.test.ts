@@ -138,9 +138,13 @@ test("parseSession refuses a history large enough to be a denial of service", ()
   assert.match(sessionError(JSON.stringify(raw)), /too many steps/);
 });
 
-test("markdown export names speakers and clips huge tool dumps", () => {
+test("markdown export names speakers, lists attachment names, and clips huge tool dumps", () => {
   const huge: Step[] = [
-    { kind: "user", text: "run it" },
+    {
+      kind: "user",
+      text: "run it",
+      attachments: [{ id: "a1", name: "fixture.json", mime: "text/plain", data: "{}", kind: "text" }],
+    },
     { kind: "assistant", text: "done", calls: [] },
     { kind: "tool-result", callId: "c", name: "Read", output: "Z".repeat(20_000), status: "completed" },
     { kind: "user", text: "ignored", synthetic: true },
@@ -148,6 +152,8 @@ test("markdown export names speakers and clips huge tool dumps", () => {
   const md = sessionToMarkdown(snap({ steps: huge }));
   assert.match(md, /## User/);
   assert.match(md, /run it/);
+  assert.match(md, /attached: fixture\.json/);
+  assert.ok(!md.includes("{}"), "attachment bodies stay out of the markdown transcript");
   assert.match(md, /## Assistant/);
   assert.match(md, /### Read \(completed\)/);
   assert.match(md, /more bytes/);

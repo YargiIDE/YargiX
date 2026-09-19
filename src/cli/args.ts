@@ -7,6 +7,7 @@
  */
 
 import type { Mode } from "../agent/types";
+import { splitPathList } from "./attach";
 
 export const MODES: Mode[] = ["agent", "ask", "plan", "debug", "review", "multitask", "project"];
 
@@ -20,6 +21,10 @@ export interface CliOptions {
   output: string;
   /** Extra user rules appended to the context block. */
   system: string;
+  /** Load extra user rules from this file (merged with --system). */
+  systemFile: string;
+  /** Files to pin onto the first user turn (repeatable / comma-separated). */
+  attach: string[];
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
   mode: Mode;
@@ -62,6 +67,8 @@ OPTIONS
       --stdin            Read the prompt from stdin
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
+      --system-file <p>  Load extra instructions from a file (merged with --system)
+      --attach <path>    Pin a file onto the first turn (repeatable, or a,b)
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
@@ -83,6 +90,7 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
+  yargix "review these fixtures" --attach expected.json --attach out.json --mode review
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
@@ -110,6 +118,8 @@ export function parseArgs(
     stdin: false,
     output: "",
     system: "",
+    systemFile: "",
+    attach: [],
     timeout: 0,
     mode: "agent",
     model: env.YARGIX_MODEL ?? "",
@@ -202,6 +212,14 @@ export function parseArgs(
       case "--system":
         options.system = value(arg, argv[++i]);
         break;
+      case "--system-file":
+        options.systemFile = value(arg, argv[++i], true);
+        break;
+      case "--attach": {
+        const v = value(arg, argv[++i], true);
+        if (v) options.attach.push(...splitPathList(v));
+        break;
+      }
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
@@ -221,6 +239,8 @@ export function parseArgs(
 
   if (options.help || options.version) return { options, errors: [] };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
+  if (options.systemFile === "-") errors.push("system-file path cannot be '-' (stdin is only for --file/--stdin)");
+  if (options.attach.includes("-")) errors.push("attach path cannot be '-' (stdin is only for --file/--stdin)");
   if (options.file && options.stdin) errors.push("pass --file or --stdin, not both");
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");
