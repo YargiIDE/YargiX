@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/247_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -190,6 +190,8 @@ Shell commands stream their output live, run in the background when long, and ca
 
 YargiX is both an MCP **client** (with a curated one-click catalog) and an MCP **server**, so other editors can drive this workspace through its tools.
 
+The server is off by default and loopback-only. When on, it requires a per-install **bearer token** (kept in VS Code's secret storage — **YargiX: Copy MCP Client Config** puts a paste-ready `mcpServers` entry on the clipboard, **Rotate MCP Server Token** invalidates the old one), validates `Host` and `Origin` so a web page or a DNS-rebinding trick cannot reach it, and answers only `Content-Type: application/json` POSTs — the one kind of request a browser cannot send without a preflight it will never be granted.
+
 </details>
 
 <br/>
@@ -267,7 +269,7 @@ If the active model dies mid-run — outage, quota, retired model — a **fallba
 
 ## ⚙️ Configuration
 
-19 settings, all under `yargix.*`. The ones worth knowing:
+20 settings, all under `yargix.*`. The ones worth knowing:
 
 | Setting | Default | |
 |:--|:--|:--|
@@ -277,6 +279,7 @@ If the active model dies mid-run — outage, quota, retired model — a **fallba
 | `agent.selfCheck` | `true` | Verify its own edits before finishing |
 | `fallbackModels` | `[]` | Models to fall back to, in order |
 | `mcpServer.enabled` | `false` | Expose YargiX's tools to other MCP clients |
+| `mcpServer.requireAuth` | `true` | Require the server's bearer token on every MCP request |
 | `browser.headless` | `true` | Turn off to watch the agent drive the page |
 | `terminal.showFixButton` | `true` | Status-bar button for the last failed command |
 
@@ -289,7 +292,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 247 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable
@@ -309,7 +312,7 @@ Issues and pull requests are welcome. Before opening a PR, please make sure thes
 pnpm run check-types && pnpm run lint && pnpm run test:unit
 ```
 
-New behaviour should come with a test. The suite deliberately covers the parts that fail quietly — approval-policy bypasses, path traversal, protocol framing, model-output validation.
+New behaviour should come with a test. The suite deliberately covers the parts that fail quietly — approval-policy bypasses, path traversal, protocol framing, model-output validation, and the requests a browser can smuggle to a loopback server.
 
 <br/>
 

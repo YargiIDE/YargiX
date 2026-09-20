@@ -26,7 +26,7 @@ Nothing that changes files runs unattended without `--auto`.
 
 ## Wire in more tools
 
-**Settings → Tools & MCPs → Browse catalog** adds Model Context Protocol servers in one click. YargiX can also act as an MCP *server*, exposing its own tools to other editors.
+**Settings → Tools & MCPs → Browse catalog** adds Model Context Protocol servers in one click. YargiX can also act as an MCP *server*, exposing its own tools to other editors — loopback-only and token-protected; **YargiX: Copy MCP Client Config** gives you the entry to paste into the other client.
 
 ---
 
