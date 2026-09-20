@@ -234,3 +234,19 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
 });
+
+test("--dry-run validates instead of starting a run", () => {
+  const { options, errors } = parse(["fix it", "--dry-run"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.dryRun, true);
+  assert.match(USAGE, /--dry-run/);
+});
+
+test("--dry-run cannot be combined with --interactive", () => {
+  const { errors } = parse(["fix it", "--dry-run", "-i"]);
+  assert.match(errors.join(" "), /--dry-run cannot be used with --interactive/);
+});
+
+test("--dry-run defaults to off", () => {
+  assert.equal(parse(["fix it"]).options.dryRun, false);
+});

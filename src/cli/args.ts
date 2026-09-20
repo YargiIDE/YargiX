@@ -34,6 +34,8 @@ export interface CliOptions {
   /** Emit one JSON object per event instead of human-readable text. */
   json: boolean;
   quiet: boolean;
+  /** Validate the prompt and config without calling the model. */
+  dryRun: boolean;
   /** Hold a session open instead of answering once and exiting. */
   interactive: boolean;
   help: boolean;
@@ -67,6 +69,7 @@ OPTIONS
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
       --json             Emit newline-delimited JSON events, for CI
+      --dry-run          Validate the prompt and config without calling the model
   -i, --interactive      Open a session instead of answering once
   -q, --quiet            Only print the final answer
   -h, --help             Show this help
@@ -82,6 +85,7 @@ EXAMPLES
   yargix "explain what this project does" --mode ask
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
+  yargix --file task.md --output answer.md --auto --dry-run
   yargix --file task.md --output answer.md --auto --timeout 600
   cat prompt.txt | yargix --stdin --mode ask`;
 
@@ -120,6 +124,7 @@ export function parseArgs(
     auto: false,
     json: false,
     quiet: false,
+    dryRun: false,
     interactive: false,
     help: false,
     version: false,
@@ -150,6 +155,9 @@ export function parseArgs(
         break;
       case "--json":
         options.json = true;
+        break;
+      case "--dry-run":
+        options.dryRun = true;
         break;
       case "-q":
       case "--quiet":
@@ -225,6 +233,7 @@ export function parseArgs(
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");
   if (options.stdin && options.interactive) errors.push("--stdin cannot be used with --interactive");
+  if (options.dryRun && options.interactive) errors.push("--dry-run cannot be used with --interactive");
   if (options.stdin && interactiveDefault) errors.push("--stdin needs piped input (stdin is a terminal)");
   // No prompt and a terminal attached: start a session rather than complain.
   const hasPrompt = Boolean(options.prompt || options.file || options.stdin);
