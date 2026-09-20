@@ -58,8 +58,14 @@ export function actionTypeFor(toolName: string): ApprovalActionType | undefined 
 	return undefined;
 }
 
-/** Path-bearing inputs by tool. Every filesystem traversal must use this map. */
-const PATH_INPUTS: Record<string, string[]> = {
+/**
+ * Path-bearing inputs by tool. Every filesystem traversal must use this map.
+ *
+ * A tool input missing here escapes the out-of-workspace gate entirely, so this
+ * has to stay in step with `normalizeToolPaths`. `approvalPolicy.test.ts` walks
+ * `TOOL_SPECS` and fails when a schema grows a path input that is not listed.
+ */
+export const PATH_INPUTS: Record<string, string[]> = {
 	Read: ["path"],
 	ListDir: ["path"],
 	Glob: ["target_directory"],
@@ -69,6 +75,11 @@ const PATH_INPUTS: Record<string, string[]> = {
 	Write: ["path"],
 	Delete: ["path"],
 	EditNotebook: ["target_notebook"],
+	ReadLints: ["paths"],
+	// Reads each file into a subagent's context, so an escaping path leaks it.
+	Task: ["file_attachments"],
+	// Writes the resource to disk, and is otherwise ungated.
+	FetchMcpResource: ["downloadPath"],
 	Shell: ["working_directory"],
 };
 
@@ -90,13 +101,37 @@ function pathsForCall(toolName: string, input: any, root?: string): string[] {
 	});
 }
 
+/** The call's paths that land outside the workspace, resolved and de-duplicated. */
+function escapingPaths(toolName: string, input: any, root: string | undefined): string[] {
+	const escaping = pathsForCall(toolName, input, root).filter((path) => isOutsideWorkspace(path, root));
+	return [...new Set(escaping)];
+}
+
 /**
  * Action type for a concrete call: file tools targeting paths outside the
  * workspace escalate to "outside" (covers Read, which is otherwise ungated).
+ *
+ * This is the type to *show* the user; use `actionTypesForCall` to decide, since
+ * an escaping path adds the outside gate rather than replacing the tool's own.
  */
 export function actionTypeForCall(toolName: string, input: any, root: string | undefined): ApprovalActionType | undefined {
-	if (pathsForCall(toolName, input, root).some((path) => isOutsideWorkspace(path, root))) return "outside";
+	if (escapingPaths(toolName, input, root).length) return "outside";
 	return actionTypeFor(toolName);
+}
+
+/**
+ * Every gate a call has to clear.
+ *
+ * Escalation is additive: a `Write` that reaches outside the workspace answers to
+ * `edits` *and* `outside`. Replacing `edits` with `outside` let a looser outside
+ * rule wave through the very thing `edits: deny` existed to stop — a denied edit
+ * (or delete, or shell) simply moved one directory up.
+ */
+export function actionTypesForCall(toolName: string, input: any, root: string | undefined): ApprovalActionType[] {
+	const own = actionTypeFor(toolName);
+	const types = own ? [own] : [];
+	if (escapingPaths(toolName, input, root).length) types.push("outside");
+	return types;
 }
 
 /** The string a rule's patterns match against, per action type. */
@@ -250,39 +285,66 @@ function decideSubject(r: ApprovalRule, type: ApprovalActionType, subject: strin
 
 /**
  * Every subject a call must clear. A shell command line is checked per chained
- * command so a denied command can't ride along behind an allowed one.
+ * command so a denied command can't ride along behind an allowed one, and a call
+ * that reaches outside the workspace is checked per path for the same reason —
+ * one subject per path, each resolved so that `../a` and `../x/../a` cannot name
+ * the same target yet match different rules.
  */
-export function subjectsFor(type: ApprovalActionType, toolName: string, input: any): string[] {
+export function subjectsFor(type: ApprovalActionType, toolName: string, input: any, root?: string): string[] {
+	if (type === "outside") {
+		const paths = root ? escapingPaths(toolName, input, root) : pathsForCall(toolName, input);
+		return paths.length ? paths : [subjectFor(type, toolName, input)];
+	}
 	const subject = subjectFor(type, toolName, input);
 	if (type !== "shell") return [subject];
 	const parts = splitShellCommands(subject);
 	return parts.length ? parts : [subject];
 }
 
-/**
- * Evaluate the policy for a tool call: deny list > allow list > mode.
- * The strictest decision across all of the call's subjects wins.
- */
-export function evaluateApproval(policy: ApprovalPolicy, toolName: string, input: any, workspaceRoot?: string): ApprovalDecision {
-	const type = actionTypeForCall(toolName, input, workspaceRoot);
-	if (!type) return "allow";
+/** Patterns for these types are command/URL-like; the rest are path globs. */
+function usesPrefixMatching(type: ApprovalActionType): boolean {
+	return type === "shell" || type === "mcp" || type === "web";
+}
+
+/** Decide one gate across every subject the call presents to it. */
+function decideGate(
+	policy: ApprovalPolicy,
+	type: ApprovalActionType,
+	toolName: string,
+	input: any,
+	root: string | undefined,
+): { decision: ApprovalDecision; denied?: string } {
 	const r = policy[type] ?? DEFAULT_APPROVAL[type];
-	const prefixOk = type === "shell" || type === "mcp" || type === "web";
+	const prefixOk = usesPrefixMatching(type);
 
 	let decision: ApprovalDecision = "allow";
-	for (const subject of subjectsFor(type, toolName, input)) {
+	for (const subject of subjectsFor(type, toolName, input, root)) {
 		const d = decideSubject(r, type, subject, prefixOk);
+		if (d === "deny") return { decision: "deny", denied: subject };
+		if (d === "ask") decision = "ask";
+	}
+	return { decision };
+}
+
+/**
+ * Evaluate the policy for a tool call: deny list > allow list > mode.
+ * The strictest decision across every gate and every subject wins.
+ */
+export function evaluateApproval(policy: ApprovalPolicy, toolName: string, input: any, workspaceRoot?: string): ApprovalDecision {
+	let decision: ApprovalDecision = "allow";
+	for (const type of actionTypesForCall(toolName, input, workspaceRoot)) {
+		const d = decideGate(policy, type, toolName, input, workspaceRoot).decision;
 		if (d === "deny") return "deny";
 		if (d === "ask") decision = "ask";
 	}
 	return decision;
 }
 
-/** The chained command that triggered a deny (for the message shown to the model). */
+/** The subject that triggered a deny (for the message shown to the model). */
 export function deniedSubject(policy: ApprovalPolicy, toolName: string, input: any, workspaceRoot?: string): string | undefined {
-	const type = actionTypeForCall(toolName, input, workspaceRoot);
-	if (!type) return undefined;
-	const r = policy[type] ?? DEFAULT_APPROVAL[type];
-	const prefixOk = type === "shell" || type === "mcp" || type === "web";
-	return subjectsFor(type, toolName, input).find((s) => decideSubject(r, type, s, prefixOk) === "deny");
+	for (const type of actionTypesForCall(toolName, input, workspaceRoot)) {
+		const denied = decideGate(policy, type, toolName, input, workspaceRoot).denied;
+		if (denied) return denied;
+	}
+	return undefined;
 }
