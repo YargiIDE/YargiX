@@ -4,6 +4,12 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-20
+
+### Added
+
+- CLI `--dry-run` validates the prompt source, working directory, output path, and model/endpoint presence, then prints the resolved configuration without calling the model (`--json` prints one JSON object); the API key is only ever reported as set or unset
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

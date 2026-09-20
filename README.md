@@ -204,6 +204,7 @@ yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
+yargix --file task.md --output answer.md --auto --dry-run  # validate a CI run first
 cat prompt.txt | yargix --stdin --mode ask
 ```
 
@@ -220,6 +221,7 @@ cat prompt.txt | yargix --stdin --mode ask
 | `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
+| `--dry-run` | Validate the prompt and config without calling the model |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 

@@ -16,6 +16,7 @@
 
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { runDryRun } from "./dryRun";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
@@ -87,6 +88,12 @@ async function main(): Promise<number> {
   if (errors.length) {
     process.stderr.write(`${errors.map((e) => `error: ${e}`).join("\n")}\n\n${USAGE}\n`);
     return 2;
+  }
+
+  // Validates the prompt, cwd, and output path, then prints the resolved
+  // config instead of starting a run. No files are written, no model is called.
+  if (options.dryRun) {
+    return runDryRun(options);
   }
 
   const resolved = await resolvePrompt(options);
