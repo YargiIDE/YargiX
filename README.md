@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/239_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -205,6 +205,8 @@ yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
 cat prompt.txt | yargix --stdin --mode ask
+yargix --list-tools --mode review
+yargix --file task.md --print-prompt
 ```
 
 | Flag | |
@@ -221,6 +223,9 @@ cat prompt.txt | yargix --stdin --mode ask
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
+| `--list-modes` | List the agent modes and exit (no model needed) |
+| `--list-tools` | List the tools for `--mode` and exit (no model needed) |
+| `--print-prompt` | Show the resolved prompt and exit without calling the model |
 | `-C, --cwd <dir>` | Work in another directory |
 
 In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
@@ -289,7 +294,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 239 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable

@@ -36,6 +36,12 @@ export interface CliOptions {
   quiet: boolean;
   /** Hold a session open instead of answering once and exiting. */
   interactive: boolean;
+  /** List the agent modes and exit without starting a run. */
+  listModes: boolean;
+  /** List the tools for --mode and exit without starting a run. */
+  listTools: boolean;
+  /** Show the resolved prompt and exit without calling the model. */
+  printPrompt: boolean;
   help: boolean;
   version: boolean;
 }
@@ -69,6 +75,9 @@ OPTIONS
       --json             Emit newline-delimited JSON events, for CI
   -i, --interactive      Open a session instead of answering once
   -q, --quiet            Only print the final answer
+      --list-modes       List the agent modes and exit (no model needed)
+      --list-tools       List the tools for --mode and exit (no model needed)
+      --print-prompt     Show the resolved prompt and exit without calling the model
   -h, --help             Show this help
   -V, --version          Show the version
 
@@ -83,7 +92,9 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
-  cat prompt.txt | yargix --stdin --mode ask`;
+  cat prompt.txt | yargix --stdin --mode ask
+  yargix --list-tools --mode review
+  yargix --file task.md --print-prompt`;
 
 function toInt(value: string | undefined, fallback: number): number {
   const n = Number(value);
@@ -121,6 +132,9 @@ export function parseArgs(
     json: false,
     quiet: false,
     interactive: false,
+    listModes: false,
+    listTools: false,
+    printPrompt: false,
     help: false,
     version: false,
   };
@@ -161,6 +175,15 @@ export function parseArgs(
       case "-i":
       case "--interactive":
         options.interactive = true;
+        break;
+      case "--list-modes":
+        options.listModes = true;
+        break;
+      case "--list-tools":
+        options.listTools = true;
+        break;
+      case "--print-prompt":
+        options.printPrompt = true;
         break;
       case "-m":
       case "--mode": {
@@ -220,16 +243,25 @@ export function parseArgs(
   }
 
   if (options.help || options.version) return { options, errors: [] };
+  const introspections = [options.listModes, options.listTools, options.printPrompt].filter(Boolean).length;
+  if (introspections > 1) errors.push("pass only one of --list-modes, --list-tools, --print-prompt");
+  // Listing never starts a run, so it needs neither a prompt nor credentials.
+  // Already-collected errors (unknown mode/option) are kept, unlike --help.
+  if (options.listModes || options.listTools) return { options, errors };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
   if (options.file && options.stdin) errors.push("pass --file or --stdin, not both");
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");
   if (options.stdin && options.interactive) errors.push("--stdin cannot be used with --interactive");
   if (options.stdin && interactiveDefault) errors.push("--stdin needs piped input (stdin is a terminal)");
+  if (options.printPrompt && options.interactive) errors.push("--print-prompt cannot be used with --interactive");
   // No prompt and a terminal attached: start a session rather than complain.
+  // A dry run has nothing to preview then, so it errors instead (below).
   const hasPrompt = Boolean(options.prompt || options.file || options.stdin);
-  if (!hasPrompt && !options.interactive && interactiveDefault) options.interactive = true;
+  if (!hasPrompt && !options.interactive && interactiveDefault && !options.printPrompt) options.interactive = true;
   if (!hasPrompt && !options.interactive) errors.push("a prompt is required");
+  // A dry run resolves the prompt but never calls the model.
+  if (options.printPrompt) return { options, errors };
   if (!options.model) errors.push("no model: pass --model or set YARGIX_MODEL");
   if (!options.baseUrl) errors.push("no endpoint: pass --base-url or set YARGIX_BASE_URL");
 
