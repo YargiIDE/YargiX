@@ -165,6 +165,13 @@ export function splitShellCommands(command: string): string[] {
 				i++;
 				continue;
 			}
+			// A lone `&` backgrounds the command and runs what follows, so
+			// `echo hi & rm -rf /` is two commands. Without this split the whole
+			// line is one subject and a denylist prefix like `rm` never matches.
+			if (c === "&") {
+				push();
+				continue;
+			}
 			if (c === "|") {
 				push();
 				continue;
@@ -249,13 +256,31 @@ function decideSubject(r: ApprovalRule, type: ApprovalActionType, subject: strin
 }
 
 /**
+ * Strip leading `VAR=value` assignments so the policy matches the command that
+ * actually runs. `FOO=1 rm -rf /` must be checked as `rm -rf /` — otherwise a
+ * denylist entry for `rm` never matches and the command slips through. A bare
+ * assignment (`FOO=bar`) is kept as-is: it runs nothing.
+ */
+export function stripEnvAssignments(part: string): string {
+	let s = part;
+	for (;;) {
+		const m = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+/.exec(s);
+		if (!m) break;
+		const rest = s.slice(m[0].length);
+		if (!rest.trim()) break;
+		s = rest;
+	}
+	return s;
+}
+
+/**
  * Every subject a call must clear. A shell command line is checked per chained
  * command so a denied command can't ride along behind an allowed one.
  */
 export function subjectsFor(type: ApprovalActionType, toolName: string, input: any): string[] {
 	const subject = subjectFor(type, toolName, input);
 	if (type !== "shell") return [subject];
-	const parts = splitShellCommands(subject);
+	const parts = splitShellCommands(subject).map(stripEnvAssignments);
 	return parts.length ? parts : [subject];
 }
 

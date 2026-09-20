@@ -492,13 +492,24 @@ export function killShellProcess(proc: ChildProcess): void {
 /**
  * Carry `cd` across calls without keeping a live shell: a command that is only
  * a directory change updates the session cwd for subsequent commands.
+ *
+ * When `workspaceRoot` is given the session never leaves it: later commands run
+ * in session.cwd without re-consulting the "outside" rule, so a `cd /etc` would
+ * otherwise silently lift the workspace boundary for the rest of the run. Jumps
+ * outside are ignored (the cwd stays where it was); reaching outside remains
+ * possible through an explicit, approved `working_directory` on a single call.
  */
-export function applyCwdSideEffect(session: ShellSession, command: string): void {
+export function applyCwdSideEffect(session: ShellSession, command: string, workspaceRoot?: string): void {
   const m = /^\s*cd\s+(?:\/d\s+)?("([^"]+)"|'([^']+)'|[^\s&|;]+)\s*$/i.exec(command);
   if (!m) return;
   const target = (m[2] ?? m[3] ?? m[1]).trim();
   if (!target || target === "-") return;
   const next = path.isAbsolute(target) ? target : path.resolve(session.cwd, target);
+  if (workspaceRoot) {
+    const root = path.resolve(workspaceRoot);
+    const rel = path.relative(root, path.resolve(root, next));
+    if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return;
+  }
   session.cwd = next;
 }
 

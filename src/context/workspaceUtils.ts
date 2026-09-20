@@ -25,12 +25,11 @@ export function getRecentFiles(): string[] {
 	for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
 		const input = tab.input as { uri?: vscode.Uri } | undefined;
 		const uri = input?.uri;
-		if (uri && uri.scheme === "file" && uri.fsPath.startsWith(root)) {
-			const rel = path.relative(root, uri.fsPath).split(path.sep).join("/");
-			if (!out.includes(rel)) {
-				out.push(uri.fsPath);
-			}
-		}
+		if (!uri || uri.scheme !== "file") continue;
+		const rel = path.relative(root, uri.fsPath).split(path.sep).join("/");
+		// Skip tabs outside this workspace (another root in a multi-root window).
+		if (!rel || rel === ".." || rel.startsWith("../")) continue;
+		if (!out.includes(rel)) out.push(rel);
 	}
 	return out;
 }

@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Approval policy checks each side of a lone `&`: `echo hi & rm -rf /` is now two subjects, so a denied command can no longer ride behind a backgrounded one
+- Leading `VAR=value` assignments are stripped before policy matching, so `FOO=1 rm -rf /` is checked as the `rm` it runs (allowlist entries match through the prefix too)
+- A bare `cd` can no longer carry the shell session outside the workspace root; later commands run in the session cwd without re-consulting the "outside" rule, so escaping it silently lifted the boundary
+- Recent-files context is workspace-relative again (as documented), deduplicates repeat tabs, and skips tabs from other roots in a multi-root window
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import {
   splitShellCommands,
+  stripEnvAssignments,
   matchPattern,
   evaluateApproval,
   deniedSubject,
@@ -37,6 +38,22 @@ test("splitShellCommands splits on ; && || | and newlines", () => {
   assert.deepEqual(splitShellCommands("a || b"), ["a", "b"]);
   assert.deepEqual(splitShellCommands("a | b"), ["a", "b"]);
   assert.deepEqual(splitShellCommands("a\nb"), ["a", "b"]);
+});
+
+test("splitShellCommands splits on a lone & (background-then-run)", () => {
+  // Regression: `echo hi & rm -rf /` was a single subject, so a denylist entry
+  // for `rm` never matched and the chained command slipped through under allow.
+  assert.deepEqual(splitShellCommands("a & b"), ["a", "b"]);
+  assert.deepEqual(splitShellCommands("sleep 5 &"), ["sleep 5"]);
+  assert.deepEqual(splitShellCommands("a && b"), ["a", "b"], "&& still wins over &");
+});
+
+test("stripEnvAssignments exposes the command behind VAR=value prefixes", () => {
+  assert.equal(stripEnvAssignments("FOO=1 rm -rf /"), "rm -rf /");
+  assert.equal(stripEnvAssignments("A=1 B='x y' ls -la"), "ls -la");
+  assert.equal(stripEnvAssignments('A="x y" ls'), "ls");
+  assert.equal(stripEnvAssignments("FOO=bar"), "FOO=bar", "a bare assignment runs nothing");
+  assert.equal(stripEnvAssignments("echo FOO=bar"), "echo FOO=bar", "only leading assignments count");
 });
 
 test("splitShellCommands keeps separators that live inside quotes", () => {
@@ -107,6 +124,20 @@ test("a denied command cannot be smuggled behind an allowed one", () => {
   const policy = shellPolicy({ mode: "allow", denylist: ["git commit"] });
   assert.equal(evaluateApproval(policy, "Shell", { command: "git add -A; git commit -m x" }), "deny");
   assert.equal(deniedSubject(policy, "Shell", { command: "git add -A; git commit -m x" }), "git commit -m x");
+});
+
+test("a denied command cannot ride behind & or a VAR=value prefix", () => {
+  const policy = shellPolicy({ mode: "allow", denylist: ["rm"] });
+  assert.equal(evaluateApproval(policy, "Shell", { command: "echo hi & rm -rf /tmp/x" }), "deny");
+  assert.equal(deniedSubject(policy, "Shell", { command: "echo hi & rm -rf /tmp/x" }), "rm -rf /tmp/x");
+  assert.equal(evaluateApproval(policy, "Shell", { command: "FOO=1 rm -rf /tmp/x" }), "deny");
+  assert.equal(deniedSubject(policy, "Shell", { command: "FOO=1 rm -rf /tmp/x" }), "rm -rf /tmp/x");
+});
+
+test("allowlist entries still match through a VAR=value prefix", () => {
+  const policy = shellPolicy({ mode: "ask", allowlist: ["ls"] });
+  assert.equal(evaluateApproval(policy, "Shell", { command: "FOO=1 ls -la" }), "allow");
+  assert.equal(evaluateApproval(policy, "Shell", { command: "FOO=1 cat secrets.txt" }), "ask");
 });
 
 test("review mode asks for risky commands and allows tame ones", () => {
