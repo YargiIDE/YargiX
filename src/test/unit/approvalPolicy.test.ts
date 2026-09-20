@@ -16,10 +16,14 @@ import {
   deniedSubject,
   isOutsideWorkspace,
   subjectsFor,
+  actionTypesForCall,
   DEFAULT_APPROVAL,
+  PATH_INPUTS,
+  type ApprovalActionType,
   type ApprovalPolicy,
   type ApprovalRule,
 } from "../../agent/approvalPolicy";
+import { TOOL_SPECS } from "../../agent/tools/schemas";
 
 /** Build a policy where only `shell` differs from the safe defaults. */
 function shellPolicy(rule: Partial<ApprovalRule>): ApprovalPolicy {
@@ -27,6 +31,17 @@ function shellPolicy(rule: Partial<ApprovalRule>): ApprovalPolicy {
     ...DEFAULT_APPROVAL,
     shell: { mode: "allow", allowlist: [], denylist: [], ...rule },
   };
+}
+
+const WS_ROOT = process.platform === "win32" ? "C:\\ws" : "/ws";
+
+/** Build a policy from per-type overrides, filling the rest with safe defaults. */
+function policyOf(overrides: Partial<Record<ApprovalActionType, Partial<ApprovalRule>>>): ApprovalPolicy {
+  const out = { ...DEFAULT_APPROVAL };
+  for (const [type, rule] of Object.entries(overrides)) {
+    out[type as ApprovalActionType] = { mode: "ask", allowlist: [], denylist: [], ...rule };
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- splitting
@@ -147,3 +162,117 @@ test("path-bearing tools escalate to the outside rule when they leave the root",
   assert.equal(evaluateApproval(policy, "Read", { path: "../../etc/passwd" }, root), "deny");
   assert.equal(evaluateApproval(policy, "Read", { path: "src/a.ts" }, root), "allow");
 });
+
+// ------------------------------------------------------- additive escalation
+
+test("leaving the workspace adds the outside gate instead of replacing the tool's own", () => {
+  assert.deepEqual(actionTypesForCall("Write", { path: "src/a.ts" }, WS_ROOT), ["edits"]);
+  assert.deepEqual(actionTypesForCall("Write", { path: "../a.ts" }, WS_ROOT), ["edits", "outside"]);
+  // Read has no gate of its own, so outside is the only one it answers to.
+  assert.deepEqual(actionTypesForCall("Read", { path: "../a.ts" }, WS_ROOT), ["outside"]);
+  assert.deepEqual(actionTypesForCall("Read", { path: "src/a.ts" }, WS_ROOT), []);
+});
+
+test("a denied action cannot be freed by moving it outside the workspace", () => {
+  // Regression: the outside rule used to *replace* the tool's own rule, so a
+  // loose outside rule waved through the very thing edits/delete/shell denied —
+  // a denied edit simply moved one directory up.
+  const policy = policyOf({
+    edits: { mode: "deny" },
+    delete: { mode: "deny" },
+    shell: { mode: "deny" },
+    outside: { mode: "allow" },
+  });
+  assert.equal(evaluateApproval(policy, "Write", { path: "../a.ts" }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "StrReplace", { path: "../a.ts" }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "Delete", { path: "../a.ts" }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "Shell", { command: "ls", working_directory: ".." }, WS_ROOT), "deny");
+});
+
+test("an outside path still cannot be freed by a permissive tool rule", () => {
+  const policy = policyOf({ edits: { mode: "allow" }, outside: { mode: "deny" } });
+  assert.equal(evaluateApproval(policy, "Write", { path: "../a.ts" }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "Write", { path: "src/a.ts" }, WS_ROOT), "allow");
+});
+
+test("the stricter of the two gates wins", () => {
+  const asking = policyOf({ edits: { mode: "ask" }, outside: { mode: "allow" } });
+  assert.equal(evaluateApproval(asking, "Write", { path: "../a.ts" }, WS_ROOT), "ask");
+
+  const allowed = policyOf({ edits: { mode: "allow" }, outside: { mode: "allow" } });
+  assert.equal(evaluateApproval(allowed, "Write", { path: "../a.ts" }, WS_ROOT), "allow");
+});
+
+// ------------------------------------------------------------- gate coverage
+
+test("path inputs that write or read outside the workspace are gated", () => {
+  const policy = policyOf({ outside: { mode: "deny" } });
+  // FetchMcpResource writes the resource to disk and has no gate of its own, so
+  // an unlisted downloadPath made it an unapproved arbitrary-write primitive.
+  assert.equal(evaluateApproval(policy, "FetchMcpResource", { server: "s", uri: "u", downloadPath: "../../evil.sh" }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "ReadLints", { paths: ["../../etc"] }, WS_ROOT), "deny");
+  // Task reads each attachment into a subagent's context.
+  assert.equal(evaluateApproval(policy, "Task", { file_attachments: ["../../secrets/id_rsa"] }, WS_ROOT), "deny");
+  // Staying inside the workspace leaves them ungated, as before.
+  assert.equal(evaluateApproval(policy, "FetchMcpResource", { server: "s", uri: "u", downloadPath: "out/x" }, WS_ROOT), "allow");
+});
+
+test("every path-bearing tool input is listed in PATH_INPUTS", () => {
+  // Drift guard: a schema that grows a path input without being gated here would
+  // silently escape the outside check, which is how the three above were missed.
+  const pathLike = /^(path|paths|downloadPath|.*_?(?:file|files|dir|dirs|directory|directories|notebook|attachments))$/i;
+  const missing: string[] = [];
+  for (const [tool, spec] of Object.entries(TOOL_SPECS)) {
+    const properties = (spec.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+    for (const name of Object.keys(properties)) {
+      if (pathLike.test(name) && !(PATH_INPUTS[tool] ?? []).includes(name)) missing.push(`${tool}.${name}`);
+    }
+  }
+  assert.deepEqual(missing, [], `ungated path inputs: ${missing.join(", ")}`);
+});
+
+test("PATH_INPUTS does not name inputs the schemas do not have", () => {
+  const unknown: string[] = [];
+  for (const [tool, keys] of Object.entries(PATH_INPUTS)) {
+    const spec = TOOL_SPECS[tool];
+    if (!spec) {
+      unknown.push(tool);
+      continue;
+    }
+    const properties = (spec.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+    for (const key of keys) if (!(key in properties)) unknown.push(`${tool}.${key}`);
+  }
+  assert.deepEqual(unknown, []);
+});
+
+// --------------------------------------------------------- outside subjects
+
+test("each escaping path is its own subject, so none rides along behind another", () => {
+  // Regression: every path used to be joined into one "../a, ../b" subject, which
+  // matched no pattern at all — an outside allow/deny rule was dead weight for
+  // any tool that takes a list of paths.
+  const policy = policyOf({ outside: { mode: "allow", denylist: [outsidePattern("a")] } });
+  assert.equal(evaluateApproval(policy, "SemanticSearch", { target_directories: ["../a"] }, WS_ROOT), "deny");
+  assert.equal(evaluateApproval(policy, "SemanticSearch", { target_directories: ["../b", "../a"] }, WS_ROOT), "deny");
+  assert.equal(deniedSubject(policy, "SemanticSearch", { target_directories: ["../b", "../a"] }, WS_ROOT), outsidePath("a"));
+  assert.equal(evaluateApproval(policy, "SemanticSearch", { target_directories: ["../b"] }, WS_ROOT), "allow");
+});
+
+test("outside subjects are the resolved path, so one target cannot be spelled two ways", () => {
+  assert.deepEqual(subjectsFor("outside", "Write", { path: "../a" }, WS_ROOT), [outsidePath("a")]);
+  assert.deepEqual(subjectsFor("outside", "Write", { path: "../x/../a" }, WS_ROOT), [outsidePath("a")]);
+  // Only the escaping paths answer to the outside rule.
+  assert.deepEqual(subjectsFor("outside", "SemanticSearch", { target_directories: ["src", "../a"] }, WS_ROOT), [outsidePath("a")]);
+  // Repeats collapse rather than asking the same question twice.
+  assert.deepEqual(subjectsFor("outside", "SemanticSearch", { target_directories: ["../a", "../a"] }, WS_ROOT), [outsidePath("a")]);
+});
+
+/** A path one level above the workspace root, as the outside gate resolves it. */
+function outsidePath(name: string): string {
+  return process.platform === "win32" ? `C:\\${name}` : `/${name}`;
+}
+
+/** The same path as a rule pattern: `matchPattern` compares on forward slashes. */
+function outsidePattern(name: string): string {
+  return outsidePath(name).replace(/\\/g, "/");
+}

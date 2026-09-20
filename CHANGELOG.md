@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-20
+
+### Fixed
+
+- Out-of-workspace access no longer *replaces* a tool's own approval gate, it adds to it: a call that reaches outside the workspace must clear both, and the stricter answer wins. `edits: deny` (or `delete`, or `shell`) could previously be escaped by moving the same action one directory up, because only the — possibly looser — out-of-workspace rule was consulted
+- `ReadLints` paths, `Task` file attachments, and `FetchMcpResource`'s `downloadPath` are checked against the out-of-workspace rule. They were absent from the approval gate's path map while present in path normalization, so they skipped the check entirely; `FetchMcpResource` has no gate of its own, which made its `downloadPath` an unapproved write to anywhere on disk
+- Each escaping path is its own approval subject instead of every path being joined into one `"../a, ../b"` string that matched no pattern. An out-of-workspace allow/deny rule now works for the tools that take a list of paths, and a denied path cannot ride along behind an allowed one
+- Out-of-workspace subjects are the resolved path, so `../a` and `../x/../a` cannot name one target yet match different rules. Patterns for that rule match absolute paths (`/etc/**`), which is what they resolve to
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

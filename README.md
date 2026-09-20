@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/223_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -140,6 +140,7 @@ flowchart LR
 - **Per-action policy** — `allow` / `ask` / `review` / `deny` for shell, edits, deletes, MCP, web and out-of-workspace access, each with wildcard allow and deny lists.
 - **Risk heuristics** in review mode catch `rm -rf`, `sudo`, `.env`, private keys and credential files.
 - **Chained commands are checked one at a time**, so a denied command cannot ride along behind an allowed one: `git add -A; git commit` is evaluated as two commands.
+- **Leaving the workspace adds a gate, never swaps one out** — a write that reaches outside answers to both `edits` and out-of-workspace access, so `edits: deny` cannot be escaped by moving one directory up. Each escaping path is checked on its own, and every path-bearing tool input is covered.
 - **Plan approval gate** — leaving plan mode for a mode that can execute requires your sign-off. The agent cannot approve its own plan.
 - **Nothing runs unattended in CI** without an explicit `--auto`.
 
@@ -289,7 +290,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 223 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable
