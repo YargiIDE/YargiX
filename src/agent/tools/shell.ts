@@ -201,8 +201,9 @@ export const runTerminalTool = defineTool("Shell", true, async (input, abortSign
         }
       }, 600_000).unref?.();
     } else if (sh.status === "completed") {
-      // Only a clean `cd` moves the run's working directory.
-      applyCwdSideEffect(session, command);
+      // Only a clean `cd` moves the run's working directory — and never out of
+      // the workspace (see applyCwdSideEffect).
+      applyCwdSideEffect(session, command, root);
     }
 
     return { output: renderShell(sh) };
