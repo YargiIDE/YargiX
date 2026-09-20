@@ -22,7 +22,10 @@ import * as os from "os";
 import * as path from "path";
 
 import {
+  MAX_OUTPUT_BYTES,
   MAX_PROMPT_BYTES,
+  OUTPUT_APPEND_SEPARATOR,
+  appendChunk,
   isIoError,
   loadPrompt,
   promptSource,
@@ -174,4 +177,50 @@ test("writeTextFile refuses an empty path", async () => {
   const written = await writeTextFile("  ", process.cwd(), "x");
   assert.ok(isIoError(written));
   assert.match(written.error, /empty/);
+});
+
+test("appendChunk separates later answers without gluing them", () => {
+  assert.equal(appendChunk(0, false, "first"), "first");
+  assert.equal(appendChunk(5, true, "second"), `${OUTPUT_APPEND_SEPARATOR}second`);
+  assert.equal(appendChunk(5, false, "second"), `\n${OUTPUT_APPEND_SEPARATOR}second`);
+});
+
+test("writeTextFile --append creates, then collects later answers", async () => {
+  const root = await tempDir();
+  const dest = "answers.md";
+  const first = await writeTextFile(dest, root, "first\n", { append: true });
+  if (isIoError(first)) assert.fail(first.error);
+  const second = await writeTextFile(dest, root, "second\n", { append: true });
+  if (isIoError(second)) assert.fail(second.error);
+  assert.equal(await fs.readFile(first.path, "utf8"), `first\n${OUTPUT_APPEND_SEPARATOR}second\n`);
+  const third = await writeTextFile(dest, root, "third");
+  if (isIoError(third)) assert.fail(third.error);
+  assert.equal(await fs.readFile(third.path, "utf8"), "third", "omit append and the file is replaced");
+});
+
+test("append adds a newline before the separator when the file lacks one", async () => {
+  const root = await tempDir();
+  const dest = path.join(root, "out.md");
+  await fs.writeFile(dest, "no-nl");
+  const written = await writeTextFile("out.md", root, "next", { append: true });
+  if (isIoError(written)) assert.fail(written.error);
+  assert.equal(await fs.readFile(dest, "utf8"), `no-nl\n${OUTPUT_APPEND_SEPARATOR}next`);
+});
+
+test("append refuses a file that is already over the artifact cap", async () => {
+  const root = await tempDir();
+  const dest = path.join(root, "fat.md");
+  await fs.writeFile(dest, Buffer.alloc(MAX_OUTPUT_BYTES + 1, 0x61));
+  const written = await writeTextFile("fat.md", root, "more", { append: true });
+  assert.ok(isIoError(written));
+  assert.match(written.error, /exceeds/);
+});
+
+test("append refuses a write that would push the artifact past the cap", async () => {
+  const root = await tempDir();
+  const dest = path.join(root, "almost.md");
+  await fs.writeFile(dest, Buffer.alloc(MAX_OUTPUT_BYTES - 8, 0x61));
+  const written = await writeTextFile("almost.md", root, "this will not fit", { append: true });
+  assert.ok(isIoError(written));
+  assert.match(written.error, /exceeds/);
 });

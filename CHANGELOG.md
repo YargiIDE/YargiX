@@ -4,6 +4,13 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-20
+
+### Added
+
+- `--append` with `--output` so CI can collect successive answers in one artifact instead of overwriting it
+- Appended answers are separated by a markdown `---` rule; the file is refused past 5 MB so a looping job cannot fill the disk
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

@@ -429,7 +429,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     if (timedOut) out(`- timed out after ${options.timeout}s`);
     if (options.output && gotResult) {
-      const written = await writeTextFile(options.output, options.cwd, finalText);
+      const written = await writeTextFile(options.output, options.cwd, finalText, {
+        append: options.append,
+      });
       if (isIoError(written)) out(`- ${written.error}`);
     }
   }

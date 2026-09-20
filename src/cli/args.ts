@@ -18,6 +18,8 @@ export interface CliOptions {
   stdin: boolean;
   /** Write the final answer to this path when the run finishes. */
   output: string;
+  /** Append to `--output` instead of replacing it. */
+  append: boolean;
   /** Extra user rules appended to the context block. */
   system: string;
   /** Wall-clock abort after this many seconds. 0 = no limit. */
@@ -61,6 +63,7 @@ OPTIONS
   -f, --file <path>      Read the prompt from a file (use - for stdin)
       --stdin            Read the prompt from stdin
   -o, --output <path>    Write the final answer to a file when the run finishes
+      --append           Append to --output instead of overwriting it
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
       --max-steps <n>    Stop after n agent steps (default: 50)
@@ -83,6 +86,7 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
+  yargix --file next.md --output answers.md --append --auto
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
@@ -109,6 +113,7 @@ export function parseArgs(
     file: "",
     stdin: false,
     output: "",
+    append: false,
     system: "",
     timeout: 0,
     mode: "agent",
@@ -199,6 +204,9 @@ export function parseArgs(
       case "--output":
         options.output = value(arg, argv[++i], true);
         break;
+      case "--append":
+        options.append = true;
+        break;
       case "--system":
         options.system = value(arg, argv[++i]);
         break;
@@ -221,6 +229,7 @@ export function parseArgs(
 
   if (options.help || options.version) return { options, errors: [] };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
+  if (options.append && !options.output) errors.push("--append requires --output");
   if (options.file && options.stdin) errors.push("pass --file or --stdin, not both");
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");

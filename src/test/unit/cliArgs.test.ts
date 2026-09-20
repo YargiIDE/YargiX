@@ -154,6 +154,7 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--file/);
   assert.match(USAGE, /--stdin/);
   assert.match(USAGE, /--output/);
+  assert.match(USAGE, /--append/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
 });
@@ -202,6 +203,15 @@ test("--stdin cannot be combined with --interactive", () => {
 test("--output - is refused because the answer already streams to stdout", () => {
   const { errors } = parse(["x", "--output", "-"]);
   assert.match(errors.join(" "), /output path cannot be/);
+});
+
+test("--append is off unless passed, and needs --output", () => {
+  assert.equal(parse(["x"]).options.append, false);
+  const withOut = parse(["x", "--output", "a.md", "--append"]);
+  assert.deepEqual(withOut.errors, []);
+  assert.equal(withOut.options.append, true);
+  assert.equal(withOut.options.output, "a.md");
+  assert.match(parse(["x", "--append"]).errors.join(" "), /--append requires --output/);
 });
 
 test("new flags parse with their short aliases", () => {
