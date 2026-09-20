@@ -4,6 +4,14 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-20
+
+### Added
+
+- CLI introspection: `--list-modes` and `--list-tools` (with `--mode`) report what a run would use and exit without needing a model or credentials
+- `--print-prompt` dry-run shows the resolved prompt plus mode, model, system, and source without calling the model; honors `--output`, `--json`, and `--quiet` (prompt text only)
+- `--quiet` with the list flags prints bare names, one per line, for scripting
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

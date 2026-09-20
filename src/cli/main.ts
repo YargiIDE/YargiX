@@ -17,6 +17,16 @@
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
+import {
+  describePromptSource,
+  formatModeNames,
+  formatModes,
+  formatPromptPreview,
+  formatToolNames,
+  formatTools,
+  modesJson,
+  toolsJson,
+} from "./introspect";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -88,6 +98,33 @@ async function main(): Promise<number> {
     process.stderr.write(`${errors.map((e) => `error: ${e}`).join("\n")}\n\n${USAGE}\n`);
     return 2;
   }
+
+  // Introspection exits before any prompt resolution or network use.
+  if (options.listModes) {
+    if (options.json) process.stdout.write(`${JSON.stringify(modesJson())}\n`);
+    else if (options.quiet) process.stdout.write(formatModeNames());
+    else process.stdout.write(formatModes());
+    return 0;
+  }
+  if (options.listTools) {
+    try {
+      configureShim({ root: options.cwd, settings: shimSettings(options) });
+      const { toolsForMode } = await import("../agent/tools/index.js");
+      const tools = toolsForMode(options.mode).map((t) => ({
+        name: t.schema.function.name,
+        description: t.schema.function.description,
+        mutating: t.mutating,
+      }));
+      if (options.json) process.stdout.write(`${JSON.stringify(toolsJson(options.mode, tools))}\n`);
+      else if (options.quiet) process.stdout.write(formatToolNames(tools));
+      else process.stdout.write(formatTools(options.mode, tools));
+      return 0;
+    } catch (error) {
+      process.stderr.write(`x ${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
+  }
+  if (options.printPrompt) return printPrompt(options);
 
   const resolved = await resolvePrompt(options);
   if (typeof resolved === "number") return resolved;
@@ -231,6 +268,53 @@ async function main(): Promise<number> {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * Dry run: resolve `--file` / `--stdin` / argv and report the prompt plus the
+ * run it would start, without calling the model. `--output` captures the same
+ * bytes that go to stdout, mirroring the normal run.
+ */
+async function printPrompt(options: CliOptions): Promise<number> {
+  const resolved = await resolvePrompt(options);
+  if (typeof resolved === "number") return resolved;
+  const source = promptSource(options);
+  const label = "error" in source ? "none" : describePromptSource(source);
+  let body: string;
+  if (options.json) {
+    body = `${JSON.stringify({
+      mode: options.mode,
+      model: options.model,
+      cwd: options.cwd,
+      system: options.system,
+      source: label,
+      prompt: resolved,
+    })}\n`;
+  } else if (options.quiet) {
+    // --quiet keeps only the prompt text, the way it keeps only the final answer.
+    body = resolved.endsWith("\n") ? resolved : `${resolved}\n`;
+  } else {
+    body = formatPromptPreview({
+      mode: options.mode,
+      model: options.model,
+      cwd: options.cwd,
+      system: options.system,
+      source: label,
+      prompt: resolved,
+    });
+  }
+  process.stdout.write(body);
+  if (options.output) {
+    const written = await writeTextFile(options.output, options.cwd, body);
+    if (isIoError(written)) {
+      process.stderr.write(`error: ${written.error}\n`);
+      return 1;
+    }
+    if (!options.quiet && !options.json) {
+      process.stderr.write(`- wrote ${written.path}\n`);
+    }
+  }
+  return 0;
 }
 
 /**

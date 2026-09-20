@@ -234,3 +234,61 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
 });
+
+// ------------------------------------------------------- introspection
+
+test("introspection flags default off and parse on", () => {
+  const def = parse(["x"]).options;
+  assert.equal(def.listModes, false);
+  assert.equal(def.listTools, false);
+  assert.equal(def.printPrompt, false);
+  assert.equal(parse(["--list-modes"]).options.listModes, true);
+  assert.equal(parse(["--list-tools"]).options.listTools, true);
+  assert.equal(parse(["hi", "--print-prompt"]).options.printPrompt, true);
+});
+
+test("listing needs neither a prompt nor credentials", () => {
+  for (const flag of ["--list-modes", "--list-tools"]) {
+    const { options, errors } = parseArgs([flag], {} as NodeJS.ProcessEnv, false);
+    assert.deepEqual(errors, [], `${flag} should not demand a prompt or endpoint`);
+    assert.equal(options.interactive, false, `${flag} must not open a session`);
+  }
+});
+
+test("an unknown mode still fails loudly when listing", () => {
+  const { errors } = parse(["--list-tools", "--mode", "sudo"]);
+  assert.match(errors.join(" "), /unknown mode/);
+});
+
+test("only one introspection flag at a time", () => {
+  const { errors } = parse(["--list-modes", "--list-tools"]);
+  assert.match(errors.join(" "), /only one of/);
+  const { errors: two } = parse(["hi", "--list-modes", "--print-prompt"]);
+  assert.match(two.join(" "), /only one of/);
+});
+
+test("--print-prompt needs a prompt source but no model or endpoint", () => {
+  const { errors } = parseArgs(["--print-prompt"], {} as NodeJS.ProcessEnv, false);
+  assert.match(errors.join(" "), /prompt is required/);
+  assert.doesNotMatch(errors.join(" "), /no model/);
+  assert.doesNotMatch(errors.join(" "), /no endpoint/);
+  const { errors: ok } = parseArgs(["hi", "--print-prompt"], {} as NodeJS.ProcessEnv, false);
+  assert.deepEqual(ok, [], "a dry run never calls the model");
+});
+
+test("--print-prompt on a TTY with no prompt errors instead of opening a session", () => {
+  const { options, errors } = parseArgs(["--print-prompt"], {} as NodeJS.ProcessEnv, true);
+  assert.match(errors.join(" "), /prompt is required/);
+  assert.equal(options.interactive, false);
+});
+
+test("--print-prompt cannot be combined with --interactive", () => {
+  const { errors } = parse(["hi", "--print-prompt", "-i"]);
+  assert.match(errors.join(" "), /--print-prompt cannot be used with --interactive/);
+});
+
+test("the usage text documents the introspection flags", () => {
+  assert.match(USAGE, /--list-modes/);
+  assert.match(USAGE, /--list-tools/);
+  assert.match(USAGE, /--print-prompt/);
+});
