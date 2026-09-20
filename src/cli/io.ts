@@ -22,6 +22,20 @@ import * as path from "path";
 /** Hard cap so a redirected binary or a multi-GB dump cannot fill memory. */
 export const MAX_PROMPT_BYTES = 1_000_000;
 
+/**
+ * Cap on an `--output --append` artifact. Overwrite stays uncapped so a single
+ * large answer is not refused; a looping CI job must not be able to fill a disk.
+ */
+export const MAX_OUTPUT_BYTES = 5_000_000;
+
+/** Inserted between successive `--output --append` answers. */
+export const OUTPUT_APPEND_SEPARATOR = "\n---\n\n";
+
+export type WriteTextOptions = {
+  /** Add to the file instead of replacing it. Creates the file when missing. */
+  append?: boolean;
+};
+
 export type IoErr = { error: string };
 export type IoResult<T> = (T & { error?: undefined }) | IoErr;
 
@@ -136,11 +150,31 @@ export function readStdin(
   });
 }
 
+/** Bytes to add when appending `content` onto an existing file of `existingSize`. */
+export function appendChunk(existingSize: number, endsWithNewline: boolean, content: string): string {
+  if (existingSize <= 0) return content;
+  const lead = endsWithNewline ? "" : "\n";
+  return `${lead}${OUTPUT_APPEND_SEPARATOR}${content}`;
+}
+
+async function fileEndsWithNewline(resolved: string, size: number): Promise<boolean> {
+  if (size <= 0) return true;
+  const fh = await fs.open(resolved, "r");
+  try {
+    const buf = Buffer.alloc(1);
+    await fh.read(buf, 0, 1, size - 1);
+    return buf[0] === 0x0a;
+  } finally {
+    await fh.close();
+  }
+}
+
 /** Write UTF-8 text, creating parent directories. Refuses to overwrite a directory. */
 export async function writeTextFile(
   filePath: string,
   cwd: string,
   content: string,
+  opts: WriteTextOptions = {},
 ): Promise<IoResult<{ path: string }>> {
   if (!filePath.trim()) return { error: "output path is empty" };
   if (filePath.trim() === "-") {
@@ -156,7 +190,19 @@ export async function writeTextFile(
     }
     if (st?.isDirectory()) return { error: `output path is a directory: ${filePath}` };
     await fs.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.writeFile(resolved, content, "utf8");
+    if (opts.append && st && st.size > 0) {
+      if (st.size > MAX_OUTPUT_BYTES) {
+        return { error: `output file exceeds ${MAX_OUTPUT_BYTES} bytes: ${filePath}` };
+      }
+      const chunk = appendChunk(st.size, await fileEndsWithNewline(resolved, st.size), content);
+      const nextSize = st.size + Buffer.byteLength(chunk, "utf8");
+      if (nextSize > MAX_OUTPUT_BYTES) {
+        return { error: `output file exceeds ${MAX_OUTPUT_BYTES} bytes: ${filePath}` };
+      }
+      await fs.appendFile(resolved, chunk, "utf8");
+    } else {
+      await fs.writeFile(resolved, content, "utf8");
+    }
     return { path: resolved };
   } catch (e) {
     return { error: `could not write ${filePath}: ${e instanceof Error ? e.message : String(e)}` };

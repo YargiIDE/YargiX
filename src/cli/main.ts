@@ -217,13 +217,15 @@ async function main(): Promise<number> {
   }
 
   if (options.output && !timedOut && gotResult) {
-    const written = await writeTextFile(options.output, options.cwd, finalText);
+    const written = await writeTextFile(options.output, options.cwd, finalText, {
+      append: options.append,
+    });
     if (isIoError(written)) {
       process.stderr.write(`error: ${written.error}\n`);
       return 1;
     }
     if (!options.quiet && !options.json) {
-      process.stderr.write(`- wrote ${written.path}\n`);
+      process.stderr.write(`- ${options.append ? "appended" : "wrote"} ${written.path}\n`);
     }
   }
 

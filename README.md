@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/214_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/220_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -204,6 +204,7 @@ yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
+yargix --file next.md --output answers.md --append --auto
 cat prompt.txt | yargix --stdin --mode ask
 ```
 
@@ -216,6 +217,7 @@ cat prompt.txt | yargix --stdin --mode ask
 | `-f, --file <path>` | Read the prompt from a file (`-` = stdin) |
 | `--stdin` | Read the prompt from stdin (must be piped) |
 | `-o, --output <path>` | Write the final answer to a file |
+| `--append` | Append to `--output` instead of replacing it |
 | `--system <text>` | Extra instructions for this run |
 | `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
@@ -289,7 +291,7 @@ pnpm install
 pnpm run compile          # type-check + lint + bundle
 pnpm run watch            # rebuild on change
 
-pnpm run test:unit        # 214 unit tests, no editor required
+pnpm run test:unit        # 220 unit tests, no editor required
 pnpm run vsix             # package the extension
 pnpm run build:cli        # bundle the CLI
 pnpm run build:exe        # standalone executable
