@@ -4,6 +4,29 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-20
+
+### Added
+
+- MCP server bearer-token authentication: a per-install token is generated on first start and kept in VS Code's secret storage, never in settings
+- `YargiX: Copy MCP Client Config` puts a paste-ready `mcpServers` entry (URL plus `Authorization` header) on the clipboard; `YargiX: Show MCP Server Address` offers the same next to the plain URL
+- `YargiX: Rotate MCP Server Token` replaces the token immediately, without a restart; clients on the old token are rejected until updated
+- `yargix.mcpServer.requireAuth` (default `true`) — turning it off admits token-less local clients; the browser defences below stay on
+- MCP protocol version negotiation: `initialize` echoes a supported client revision (`2024-11-05`, `2025-03-26`, `2025-06-18`) instead of always answering the oldest
+
+### Security
+
+- The loopback MCP server refuses requests a web page can send: `Host` and `Origin` must be loopback (stops cross-origin `fetch` and DNS rebinding), the body must be `Content-Type: application/json` (a browser cannot send that without a CORS preflight, and the server answers no preflight), and non-POST methods get `405` with no CORS headers
+- Missing or wrong tokens get `401` with a `WWW-Authenticate` challenge; the token never appears in a response or log line
+- Refused requests are logged to the YargiX output channel with the reason, status, remote address, and origin — the first few of each reason, then every 50th, so a flood cannot bury the log
+- An unsupported `MCP-Protocol-Version` header is answered with `400` instead of being ignored
+
+### Changed
+
+- Changing `yargix.mcpServer.port` while the server is running moves it to the new port; disabling the server drops open keep-alive connections immediately instead of waiting for clients to leave
+- Two quick toggles of the server setting share one start instead of racing for the port
+- A request body over 4 MB is drained and answered with `413`, and valid JSON that is not a JSON-RPC message gets `400` / `-32600`, where both used to surface as a generic `500`
+
 ## [0.1.3] - 2026-09-04
 
 ### Added

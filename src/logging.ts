@@ -30,16 +30,30 @@ export function errorText(error: unknown): string {
   }
 }
 
-export function logError(scope: string, error: unknown, context?: Record<string, unknown>): void {
-  let details = "";
+function contextText(context?: Record<string, unknown>): string {
+  if (!context) return "";
   try {
-    if (context) details = ` ${JSON.stringify(context)}`;
+    return ` ${JSON.stringify(context)}`;
   } catch {
-    details = " [unserializable context]";
+    return " [unserializable context]";
   }
+}
+
+export function logError(scope: string, error: unknown, context?: Record<string, unknown>): void {
+  const details = contextText(context);
   try {
     getLog().appendLine(`[${new Date().toISOString()}] [error] [${scope}]${details} ${errorText(error)}`);
   } catch {
     console.error(`[YargiX] [${scope}]`, error);
+  }
+}
+
+/** Noteworthy but not a failure — e.g. a request the MCP server refused. */
+export function logWarn(scope: string, message: string, context?: Record<string, unknown>): void {
+  const details = contextText(context);
+  try {
+    getLog().appendLine(`[${new Date().toISOString()}] [warn] [${scope}]${details} ${message}`);
+  } catch {
+    console.warn(`[YargiX] [${scope}]`, message);
   }
 }

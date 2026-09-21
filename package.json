@@ -68,6 +68,14 @@
 				"title": "YargiX: Show MCP Server Address"
 			},
 			{
+				"command": "yargix.mcpServer.copyConfig",
+				"title": "YargiX: Copy MCP Client Config"
+			},
+			{
+				"command": "yargix.mcpServer.rotateToken",
+				"title": "YargiX: Rotate MCP Server Token"
+			},
+			{
 				"command": "yargix.fixTerminalCommand",
 				"title": "YargiX: Fix Last Failed Terminal Command"
 			},
@@ -244,6 +252,11 @@
 						"description": "Port for the local MCP server (127.0.0.1 only)",
 						"default": 39273,
 						"type": "integer"
+					},
+					"yargix.mcpServer.requireAuth": {
+						"description": "Require the server's bearer token on every MCP request (use 'YargiX: Copy MCP Client Config' to get it). Turning this off lets any local process drive the exposed tools.",
+						"default": true,
+						"type": "boolean"
 					},
 					"yargix.terminal.showFixButton": {
 						"type": "boolean",
