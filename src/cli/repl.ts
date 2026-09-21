@@ -38,6 +38,7 @@ export const HELP = `Commands
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
   /system [text]      extra instructions for this session (/system clear to drop)
+  /config             show the effective model, endpoint, and loaded config file
   /history            how much conversation is being carried
   /cwd                show the working directory
   /tools              list the tools available in this mode
@@ -63,6 +64,7 @@ export type Command =
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
   | { kind: "export"; value: string }
+  | { kind: "config" }
   | { kind: "unknown"; name: string };
 
 /**
@@ -116,6 +118,8 @@ export function parseCommand(line: string): Command {
       return { kind: "load", value };
     case "export":
       return { kind: "export", value };
+    case "config":
+      return { kind: "config" };
     default:
       return { kind: "unknown", name };
   }
@@ -142,6 +146,30 @@ export function describeAction(toolName: string, input: unknown): string {
   if (!detail) return toolName;
   const trimmed = detail.length > 70 ? `${detail.slice(0, 70)}...` : detail;
   return `${toolName}: ${trimmed}`;
+}
+
+/** Effective settings for `/config`. Never includes the API key. */
+export function describeConfig(
+  options: CliOptions,
+  state: { mode: Mode; model: string; auto: boolean; system: string },
+): string[] {
+  const system = state.system
+    ? state.system.length > 70
+      ? `${state.system.slice(0, 70)}...`
+      : state.system
+    : "(none)";
+  return [
+    `- config: ${options.configSource || "(none)"}`,
+    `- mode: ${state.mode}`,
+    `- model: ${state.model || "(unset)"}`,
+    `- endpoint: ${options.baseUrl || "(unset)"}`,
+    `- anthropic: ${options.anthropic ? "on" : "off"}`,
+    `- max-steps: ${options.maxSteps}`,
+    `- timeout: ${options.timeout > 0 ? `${options.timeout}s` : "(none)"}`,
+    `- system: ${system}`,
+    `- auto: ${state.auto ? "on" : "off"}`,
+    `- api-key: ${options.apiKey ? "(set)" : "(unset)"}`,
+  ];
 }
 
 /**
@@ -261,6 +289,10 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
     if (cmd.kind === "cwd") {
       out(`- ${options.cwd}`);
+      continue;
+    }
+    if (cmd.kind === "config") {
+      for (const line of describeConfig(options, state)) out(line);
       continue;
     }
     if (cmd.kind === "tools") {

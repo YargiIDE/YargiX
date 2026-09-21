@@ -15,7 +15,8 @@
  */
 
 import { configureShim } from "./vscodeShim";
-import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { parseArgs, isExecutingMode, USAGE, withConnectionErrors, type CliOptions } from "./args";
+import { applyConfig, loadCliConfig } from "./config";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
@@ -74,7 +75,9 @@ function describe(ev: AgentEvent, announced: Set<string>): string | undefined {
 }
 
 async function main(): Promise<number> {
-  const { options, errors } = parseArgs(process.argv.slice(2));
+  const parsed = parseArgs(process.argv.slice(2));
+  const options = parsed.options;
+  let errors = parsed.errors;
 
   if (options.help) {
     process.stdout.write(`${USAGE}\n`);
@@ -84,6 +87,27 @@ async function main(): Promise<number> {
     process.stdout.write(`yargix ${VERSION}\n`);
     return 0;
   }
+  if (errors.length) {
+    process.stderr.write(`${errors.map((e) => `error: ${e}`).join("\n")}\n\n${USAGE}\n`);
+    return 2;
+  }
+
+  const loaded = await loadCliConfig({
+    file: options.config,
+    noConfig: options.noConfig,
+    cwd: options.cwd,
+  });
+  if (isIoError(loaded)) {
+    process.stderr.write(`error: ${loaded.error}\n\n${USAGE}\n`);
+    return 2;
+  }
+  applyConfig(options, loaded.config, parsed.explicit);
+  options.configSource = loaded.source;
+  if (loaded.source && !options.quiet && !options.json) {
+    process.stderr.write(`- using config ${loaded.source}\n`);
+  }
+
+  errors = withConnectionErrors({ options, errors: [], explicit: parsed.explicit }).errors;
   if (errors.length) {
     process.stderr.write(`${errors.map((e) => `error: ${e}`).join("\n")}\n\n${USAGE}\n`);
     return 2;

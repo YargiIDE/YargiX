@@ -17,10 +17,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
+import { parseArgs, isExecutingMode, MODES, USAGE, withConnectionErrors } from "../../cli/args";
 
 const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
-const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
+const parse = (argv: string[], env = ENV, tty = false) =>
+  withConnectionErrors(parseArgs(argv, env as NodeJS.ProcessEnv, tty));
 
 // ------------------------------------------------------------------ basics
 
@@ -111,7 +112,7 @@ test("help and version short-circuit validation", () => {
 });
 
 test("a missing prompt, model and endpoint are all reported at once", () => {
-  const { errors } = parseArgs([], {} as NodeJS.ProcessEnv, false);
+  const { errors } = withConnectionErrors(parseArgs([], {} as NodeJS.ProcessEnv, false));
   assert.equal(errors.length, 3, `expected all three, got ${JSON.stringify(errors)}`);
   assert.match(errors.join(" "), /prompt is required/);
   assert.match(errors.join(" "), /no model/);
@@ -130,7 +131,9 @@ test("a bare invocation without a TTY demands a prompt", () => {
 });
 
 test("a prompt with no endpoint still fails", () => {
-  const { errors } = parseArgs(["do it"], { YARGIX_MODEL: "m" } as NodeJS.ProcessEnv);
+  const { errors } = withConnectionErrors(
+    parseArgs(["do it"], { YARGIX_MODEL: "m" } as NodeJS.ProcessEnv),
+  );
   assert.match(errors.join(" "), /no endpoint/);
 });
 
@@ -156,6 +159,9 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--config/);
+  assert.match(USAGE, /--no-config/);
+  assert.match(USAGE, /\.yargix\/config\.json/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +239,41 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("--config records the path and does not by itself start a run", () => {
+  const { options, errors } = parse(["x", "--config", "team.json"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.config, "team.json");
+  assert.equal(options.noConfig, false);
+});
+
+test("--no-config skips project discovery", () => {
+  const { options, errors } = parse(["x", "--no-config"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.noConfig, true);
+  assert.equal(options.config, "");
+});
+
+test("--config and --no-config together is an error", () => {
+  const { errors } = parse(["x", "--config", "a.json", "--no-config"]);
+  assert.match(errors.join(" "), /--config or --no-config/);
+});
+
+test("--config - is refused", () => {
+  const { errors } = parse(["x", "--config", "-"]);
+  assert.match(errors.join(" "), /config path cannot be/);
+});
+
+test("a missing --config value is reported", () => {
+  assert.match(parse(["x", "--config"]).errors.join(" "), /--config needs a value/);
+});
+
+test("command-line flags are marked explicit so a config file cannot override them", () => {
+  const { explicit } = parse(["x", "--model", "cli", "--mode", "ask", "--timeout", "30"]);
+  assert.equal(explicit.has("model"), true);
+  assert.equal(explicit.has("mode"), true);
+  assert.equal(explicit.has("timeout"), true);
+  assert.equal(explicit.has("baseUrl"), false);
+  assert.equal(explicit.has("system"), false);
 });

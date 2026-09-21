@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type * as readline from "node:readline";
 
-import { parseCommand, parseApproval, describeAction, LineReader, HELP, BANNER } from "../../cli/repl";
+import { parseCommand, parseApproval, describeAction, describeConfig, LineReader, HELP, BANNER } from "../../cli/repl";
 
 // ------------------------------------------------------------ parseCommand
 
@@ -189,6 +189,7 @@ test("the help text documents every command the parser accepts", () => {
     "/save",
     "/load",
     "/export",
+    "/config",
   ]) {
     assert.ok(HELP.includes(name), `help should mention ${name}`);
   }
@@ -208,4 +209,43 @@ test("system shows, sets, and is not sent to the model as a prompt", () => {
   assert.deepEqual(parseCommand("/system be terse"), { kind: "system", value: "be terse" });
   assert.deepEqual(parseCommand("/system clear"), { kind: "system", value: "clear" });
   assert.notEqual(parseCommand("/system be terse").kind, "prompt");
+});
+
+test("/config is a command, not a prompt", () => {
+  assert.deepEqual(parseCommand("/config"), { kind: "config" });
+  assert.notEqual(parseCommand("/config").kind, "prompt");
+});
+
+test("describeConfig never prints the API key", () => {
+  const lines = describeConfig(
+    {
+      prompt: "",
+      file: "",
+      stdin: false,
+      output: "",
+      system: "be brief",
+      timeout: 90,
+      mode: "ask",
+      model: "local",
+      baseUrl: "http://127.0.0.1:8080/v1",
+      apiKey: "sk-secret-must-not-leak",
+      cwd: "/repo",
+      maxSteps: 20,
+      auto: false,
+      json: false,
+      quiet: false,
+      interactive: true,
+      config: "",
+      noConfig: false,
+      configSource: "/repo/.yargix/config.json",
+      help: false,
+      version: false,
+    },
+    { mode: "ask", model: "local", auto: false, system: "be brief" },
+  );
+  const text = lines.join("\n");
+  assert.match(text, /config: \/repo\/\.yargix\/config\.json/);
+  assert.match(text, /endpoint: http:\/\/127\.0\.0\.1:8080\/v1/);
+  assert.match(text, /api-key: \(set\)/);
+  assert.equal(text.includes("sk-secret-must-not-leak"), false);
 });

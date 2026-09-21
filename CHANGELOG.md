@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2026-09-21
+
+### Added
+
+- CLI project config: `.yargix/config.json` (or `--config <path>`) can set `model`, `baseUrl`, `mode`, `maxSteps`, `timeout`, `system`, and `anthropic` so CI and local runs share the same connection without repeating flags
+- `--no-config` ignores the discovered file; flags still win over the file, and the file still wins over `YARGIX_*` environment variables
+- Interactive `/config` shows the effective model, endpoint, and loaded file — never the API key
+- A config file cannot enable `--auto` or store an API key; unknown keys fail the run instead of being ignored
+
 ## [0.1.3] - 2026-09-04
 
 ### Added
