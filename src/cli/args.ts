@@ -20,6 +20,8 @@ export interface CliOptions {
   output: string;
   /** Extra user rules appended to the context block. */
   system: string;
+  /** Attach `git status` + the working-tree patch to the prompt. */
+  diff: boolean;
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
   mode: Mode;
@@ -62,6 +64,7 @@ OPTIONS
       --stdin            Read the prompt from stdin
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
+      --diff             Attach git status and the working-tree patch to the prompt
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
@@ -81,7 +84,7 @@ EXIT CODES
 EXAMPLES
   yargix "explain what this project does" --mode ask
   yargix "add a --verbose flag and update the README" --auto
-  yargix "review the uncommitted changes" --mode review --json
+  yargix "review the uncommitted changes" --mode review --diff --json
   yargix --file task.md --output answer.md --auto --timeout 600
   cat prompt.txt | yargix --stdin --mode ask`;
 
@@ -110,6 +113,7 @@ export function parseArgs(
     stdin: false,
     output: "",
     system: "",
+    diff: false,
     timeout: 0,
     mode: "agent",
     model: env.YARGIX_MODEL ?? "",
@@ -157,6 +161,9 @@ export function parseArgs(
         break;
       case "--anthropic":
         options.anthropic = true;
+        break;
+      case "--diff":
+        options.diff = true;
         break;
       case "-i":
       case "--interactive":
