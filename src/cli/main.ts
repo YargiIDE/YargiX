@@ -16,6 +16,7 @@
 
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { composePromptWithDiff, collectGitSnapshot, isGitSnapshotError } from "./gitSnapshot";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
@@ -98,7 +99,8 @@ async function main(): Promise<number> {
   // root at import time through the aliased `vscode` module.
   const { runAgent } = await import("../agent/loop.js");
 
-  // No prompt on the command line means an interactive session.
+  // No prompt on the command line means an interactive session. `--diff` is
+  // applied per turn inside the REPL so the snapshot is never attached twice.
   if (options.interactive) {
     const { runRepl } = await import("./repl.js");
     const { toolsForMode } = await import("../agent/tools/index.js");
@@ -118,6 +120,10 @@ async function main(): Promise<number> {
       toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
     });
   }
+
+  const withDiff = await attachDiff(options.prompt, options);
+  if (typeof withDiff === "number") return withDiff;
+  options.prompt = withDiff;
 
   // --json stays a faithful copy of the event stream; only the readable output
   // collapses the repeated tool-call upserts.
@@ -250,6 +256,23 @@ async function resolvePrompt(options: CliOptions): Promise<string | number> {
     return 2;
   }
   return loaded.text;
+}
+
+/**
+ * `--diff` is opt-in and must fail the run if git cannot produce a snapshot:
+ * starting a review without the patch is worse than refusing.
+ */
+async function attachDiff(prompt: string, options: CliOptions): Promise<string | number> {
+  if (!options.diff) return prompt;
+  const snap = await collectGitSnapshot({ cwd: options.cwd });
+  if (isGitSnapshotError(snap)) {
+    process.stderr.write(`error: --diff: ${snap.error}\n`);
+    return 2;
+  }
+  if (!options.quiet && !options.json) {
+    process.stderr.write(`- attached working tree (${snap.summary})\n`);
+  }
+  return composePromptWithDiff(prompt, snap.text);
 }
 
 /**

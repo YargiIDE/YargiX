@@ -18,6 +18,7 @@
 import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
+import { collectGitSnapshot, composePromptWithDiff, isGitSnapshotError } from "./gitSnapshot";
 import { isIoError, readTextFile, writeTextFile } from "./io";
 import {
   DEFAULT_SESSION_JSON,
@@ -37,6 +38,7 @@ export const HELP = `Commands
   /mode <name>        switch mode (${MODES.join(", ")})
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
+  /diff [on|off|show] attach the working-tree patch to each prompt (currently: %DIFF%)
   /system [text]      extra instructions for this session (/system clear to drop)
   /history            how much conversation is being carried
   /cwd                show the working directory
@@ -59,6 +61,7 @@ export type Command =
   | { kind: "mode"; value: string }
   | { kind: "model"; value: string }
   | { kind: "auto"; value?: boolean }
+  | { kind: "diff"; value: string }
   | { kind: "system"; value: string }
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
@@ -108,6 +111,8 @@ export function parseCommand(line: string): Command {
       if (v === "off" || v === "false" || v === "no") return { kind: "auto", value: false };
       return { kind: "auto" }; // no argument: toggle
     }
+    case "diff":
+      return { kind: "diff", value };
     case "system":
       return { kind: "system", value };
     case "save":
@@ -188,6 +193,7 @@ interface SessionState {
   mode: Mode;
   model: string;
   auto: boolean;
+  diff: boolean;
   system: string;
   history: Step[];
 }
@@ -199,6 +205,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     mode: options.mode,
     model: options.model,
     auto: options.auto,
+    diff: options.diff,
     system: options.system,
     // Mutated in place by the agent, which is what carries the conversation.
     history: [],
@@ -212,7 +219,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   };
 
   out(BANNER);
-  out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
+  out(
+    `mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}   diff: ${state.diff ? "on" : "off"}`,
+  );
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
 
   let running: AbortController | undefined;
@@ -247,7 +256,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     if (cmd.kind === "exit") break;
 
     if (cmd.kind === "help") {
-      out(HELP.replace("%AUTO%", state.auto ? "on" : "off"));
+      out(
+        HELP.replace("%AUTO%", state.auto ? "on" : "off").replace("%DIFF%", state.diff ? "on" : "off"),
+      );
       continue;
     }
     if (cmd.kind === "clear") {
@@ -288,6 +299,24 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     if (cmd.kind === "auto") {
       state.auto = cmd.value ?? !state.auto;
       out(`- auto-approve: ${state.auto ? "on" : "off"}`);
+      continue;
+    }
+    if (cmd.kind === "diff") {
+      const v = cmd.value.trim().toLowerCase();
+      if (v === "show") {
+        const snap = await collectGitSnapshot({ cwd: options.cwd });
+        if (isGitSnapshotError(snap)) out(`- ${snap.error}`);
+        else out(snap.text);
+        continue;
+      }
+      if (v === "on" || v === "true" || v === "yes") state.diff = true;
+      else if (v === "off" || v === "false" || v === "no") state.diff = false;
+      else if (!v) state.diff = !state.diff;
+      else {
+        out("- usage: /diff [on|off|show]");
+        continue;
+      }
+      out(`- attach working-tree diff: ${state.diff ? "on" : "off"}`);
       continue;
     }
     if (cmd.kind === "system") {
@@ -354,6 +383,21 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     }
 
     // ---- a real prompt: run the agent ----
+    if (cmd.kind !== "prompt") {
+      const _never: never = cmd;
+      void _never;
+      continue;
+    }
+    let prompt = cmd.text;
+    if (state.diff) {
+      const snap = await collectGitSnapshot({ cwd: options.cwd });
+      if (isGitSnapshotError(snap)) {
+        out(`- --diff: ${snap.error}`);
+      } else {
+        prompt = composePromptWithDiff(prompt, snap.text);
+        out(`- attached working tree (${snap.summary})`);
+      }
+    }
     const controller = new AbortController();
     running = controller;
     const announced = new Set<string>();
@@ -380,7 +424,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       await deps.runAgent({
         model: state.model,
         mode: state.mode,
-        prompt: cmd.text,
+        prompt,
         history: state.history,
         extraInstructions: state.system || undefined,
         approve: async (toolName: string, input: unknown) => {

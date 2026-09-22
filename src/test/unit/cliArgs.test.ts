@@ -79,11 +79,16 @@ test("a flag missing its value is reported", () => {
 });
 
 test("boolean flags set exactly what they say", () => {
-  const { options } = parse(["x", "--auto", "--json", "--quiet", "--anthropic"]);
+  const { options } = parse(["x", "--auto", "--json", "--quiet", "--anthropic", "--diff"]);
   assert.equal(options.auto, true);
   assert.equal(options.json, true);
   assert.equal(options.quiet, true);
   assert.equal(options.anthropic, true);
+  assert.equal(options.diff, true);
+});
+
+test("--diff is off unless asked for", () => {
+  assert.equal(parse(["x"]).options.diff, false);
 });
 
 test("short aliases match their long forms", () => {
@@ -156,6 +161,7 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--diff/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {

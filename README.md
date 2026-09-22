@@ -21,7 +21,7 @@
 ![Tools](https://img.shields.io/badge/28_tools-8b5cf6?style=flat-square)
 ![Modes](https://img.shields.io/badge/7_modes-ec4899?style=flat-square)
 ![Offline](https://img.shields.io/badge/works_offline-0ea5e9?style=flat-square)
-![Tests](https://img.shields.io/badge/247_tests_passing-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/271_tests_passing-22c55e?style=flat-square)
 
 </div>
 
@@ -203,7 +203,7 @@ The same agent, headless — sharing the extension's loop, tools and approval po
 ```bash
 yargix                                        # interactive session
 yargix "explain what this project does" --mode ask
-yargix "review the uncommitted changes" --mode review
+yargix "review the uncommitted changes" --mode review --diff
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
 cat prompt.txt | yargix --stdin --mode ask
@@ -219,13 +219,14 @@ cat prompt.txt | yargix --stdin --mode ask
 | `--stdin` | Read the prompt from stdin (must be piped) |
 | `-o, --output <path>` | Write the final answer to a file |
 | `--system <text>` | Extra instructions for this run |
+| `--diff` | Attach `git status` and the working-tree patch to the prompt |
 | `--timeout <sec>` | Abort the run after this many seconds |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session. `/diff` attaches the working-tree patch to each prompt (`/diff show` prints it).
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 

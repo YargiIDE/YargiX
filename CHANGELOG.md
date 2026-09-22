@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.5] - 2026-09-22
+
+### Added
+
+- CLI `--diff` attaches `git status` plus the staged and unstaged working-tree patch to the prompt, so `review` / `ask` can see the change set without Shell or `--auto`
+- Interactive `/diff [on|off|show]` toggles the same attachment for the rest of the session, or prints the current snapshot
+- Sensitive paths (`.env*`, keys, `id_rsa`, `secrets/`, `credentials`) are named in the status and redacted from the patch; binary and oversized untracked files are omitted
+- A missing git binary, a non-repo `--cwd`, or a hung git is a usage error (exit 2) instead of a silent empty review; oversize patches are truncated with a marker
+
 ## [0.1.4] - 2026-09-20
 
 ### Added
