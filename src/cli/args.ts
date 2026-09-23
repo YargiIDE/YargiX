@@ -7,6 +7,7 @@
  */
 
 import type { Mode } from "../agent/types";
+import { resolvedPathsEqual } from "./logFile";
 
 export const MODES: Mode[] = ["agent", "ask", "plan", "debug", "review", "multitask", "project"];
 
@@ -36,6 +37,8 @@ export interface CliOptions {
   quiet: boolean;
   /** Hold a session open instead of answering once and exiting. */
   interactive: boolean;
+  /** Mirror every agent event as NDJSON to this path. Empty = off. */
+  logFile: string;
   help: boolean;
   version: boolean;
 }
@@ -63,6 +66,7 @@ OPTIONS
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
+      --log-file <path>  Write every event as NDJSON (distinct from --output)
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
@@ -83,6 +87,7 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
+  yargix "review the diff" --mode review --log-file .yargix/events.jsonl --json
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
@@ -121,6 +126,7 @@ export function parseArgs(
     json: false,
     quiet: false,
     interactive: false,
+    logFile: "",
     help: false,
     version: false,
   };
@@ -205,6 +211,9 @@ export function parseArgs(
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
+      case "--log-file":
+        options.logFile = value(arg, argv[++i], true);
+        break;
       default:
         // A lone "-" is the Unix stdin placeholder, not an unknown flag.
         if (arg.startsWith("-") && arg !== "-") errors.push(`unknown option "${arg}"`);
@@ -221,6 +230,10 @@ export function parseArgs(
 
   if (options.help || options.version) return { options, errors: [] };
   if (options.output === "-") errors.push("output path cannot be '-' (the answer already streams to stdout)");
+  if (options.logFile === "-") errors.push("log file path cannot be '-' (use --json to stream events to stdout)");
+  if (options.logFile && options.output && resolvedPathsEqual(options.logFile, options.output, options.cwd)) {
+    errors.push("--log-file and --output cannot be the same path");
+  }
   if (options.file && options.stdin) errors.push("pass --file or --stdin, not both");
   if (options.file && options.prompt) errors.push("pass a prompt or --file, not both");
   if (options.stdin && options.prompt) errors.push("pass a prompt or --stdin, not both");

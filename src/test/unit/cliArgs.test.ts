@@ -156,6 +156,7 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--log-file/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -202,6 +203,26 @@ test("--stdin cannot be combined with --interactive", () => {
 test("--output - is refused because the answer already streams to stdout", () => {
   const { errors } = parse(["x", "--output", "-"]);
   assert.match(errors.join(" "), /output path cannot be/);
+});
+
+test("--log-file - is refused because --json already streams events", () => {
+  const { errors } = parse(["x", "--log-file", "-"]);
+  assert.match(errors.join(" "), /log file path cannot be/);
+});
+
+test("--log-file and --output cannot share a path", () => {
+  const { errors } = parse(["x", "--log-file", "out/run.jsonl", "--output", "./out/run.jsonl"]);
+  assert.match(errors.join(" "), /cannot be the same path/);
+});
+
+test("--log-file parses a relative path", () => {
+  const { options, errors } = parse(["x", "--log-file", ".yargix/events.jsonl"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.logFile, ".yargix/events.jsonl");
+});
+
+test("--log-file without a value is reported", () => {
+  assert.match(parse(["x", "--log-file"]).errors.join(" "), /--log-file needs a value/);
 });
 
 test("new flags parse with their short aliases", () => {
