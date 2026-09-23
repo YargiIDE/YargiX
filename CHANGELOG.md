@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.5] - 2026-09-23
+
+### Added
+
+- CLI `--log-file <path>` mirrors every agent event as NDJSON (`{ ts, event }` per line), so a CI job can keep the trace after the process exits. Distinct from `--json` (live stdout) and `--output` (the final answer)
+- Interactive `/log [path|on|off]` turns the same log on, off, or to another file mid-session (`/log on` writes `.yargix/events.jsonl`)
+- The log is opened before the run starts: a missing parent directory is created, a directory target or `-` is refused, and the same path as `--output` is a usage error so the two artifacts cannot overwrite each other
+- A 50 MB hard cap writes one `{ truncated: true, bytes }` marker and then drops further events, so a long stream of `text-delta` / shell progress cannot fill a disk. A write error after open is reported and then ignored — it does not fail a run that already finished
+
 ## [0.1.4] - 2026-09-20
 
 ### Added

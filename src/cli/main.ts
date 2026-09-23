@@ -17,6 +17,7 @@
 import { configureShim } from "./vscodeShim";
 import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
+import { EventLog, describeLog, teeEmit } from "./logFile";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
 
@@ -93,6 +94,9 @@ async function main(): Promise<number> {
   if (typeof resolved === "number") return resolved;
   options.prompt = resolved;
 
+  const log = await openLog(options);
+  if (typeof log === "number") return log;
+
   configureShim({ root: options.cwd, settings: shimSettings(options) });
   // Imported after the shim is configured: these modules read the workspace
   // root at import time through the aliased `vscode` module.
@@ -102,21 +106,25 @@ async function main(): Promise<number> {
   if (options.interactive) {
     const { runRepl } = await import("./repl.js");
     const { toolsForMode } = await import("../agent/tools/index.js");
-    return runRepl(options, {
-      runAgent: (o) =>
-        runAgent({
-          apiBaseUrl: options.baseUrl,
-          apiKey: options.apiKey,
-          anthropic: options.anthropic,
-          maxSteps: options.maxSteps,
-          extraInstructions: options.system || undefined,
-          enableFileReading: true,
-          enableTerminalSuggestions: true,
-          enableWorkspaceContext: true,
-          ...o,
-        } as Parameters<typeof runAgent>[0]),
-      toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
-    });
+    return runRepl(
+      options,
+      {
+        runAgent: (o) =>
+          runAgent({
+            apiBaseUrl: options.baseUrl,
+            apiKey: options.apiKey,
+            anthropic: options.anthropic,
+            maxSteps: options.maxSteps,
+            extraInstructions: options.system || undefined,
+            enableFileReading: true,
+            enableTerminalSuggestions: true,
+            enableWorkspaceContext: true,
+            ...o,
+          } as Parameters<typeof runAgent>[0]),
+        toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
+      },
+      log,
+    );
   }
 
   // --json stays a faithful copy of the event stream; only the readable output
@@ -131,7 +139,7 @@ async function main(): Promise<number> {
     midLine = false;
   };
 
-  const writeEvent = (ev: AgentEvent) => {
+  const writeEvent = teeEmit((ev: AgentEvent) => {
     if (options.json) {
       process.stdout.write(`${JSON.stringify(ev)}\n`);
       return;
@@ -146,7 +154,7 @@ async function main(): Promise<number> {
     if (!line) return;
     endLine();
     process.stderr.write(`${line}\n`);
-  };
+  }, log);
 
   const controller = new AbortController();
   const onSignal = () => controller.abort();
@@ -207,6 +215,7 @@ async function main(): Promise<number> {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     if (!options.json) endLine();
+    await log?.close();
   }
 
   if (timedOut) {
@@ -230,7 +239,24 @@ async function main(): Promise<number> {
   if (denied && !options.quiet && !options.json) {
     process.stderr.write(`- ${denied} action(s) were blocked. Re-run with --auto to allow them.\n`);
   }
+  if (log && !options.quiet && !options.json) {
+    process.stderr.write(`- ${describeLog(log)}\n`);
+  }
   return failed ? 1 : 0;
+}
+
+/**
+ * Open `--log-file` before the run starts so a bad path is a usage error
+ * (exit 2) rather than a missing artifact after the model has already run.
+ */
+async function openLog(options: CliOptions): Promise<EventLog | undefined | number> {
+  if (!options.logFile) return undefined;
+  const opened = await EventLog.open(options.logFile, options.cwd);
+  if (isIoError(opened)) {
+    process.stderr.write(`error: ${opened.error}\n`);
+    return 2;
+  }
+  return opened;
 }
 
 /**

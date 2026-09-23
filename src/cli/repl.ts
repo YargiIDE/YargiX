@@ -19,6 +19,7 @@ import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
 import { MODES, type CliOptions } from "./args";
 import { isIoError, readTextFile, writeTextFile } from "./io";
+import { EventLog, describeLog, parseLogArg, resolvedPathsEqual, teeEmit } from "./logFile";
 import {
   DEFAULT_SESSION_JSON,
   DEFAULT_SESSION_MD,
@@ -44,6 +45,7 @@ export const HELP = `Commands
   /save [path]        write the conversation as JSON (default: .yargix/session.json)
   /load [path]        restore a JSON session (default: .yargix/session.json)
   /export [path]      write a markdown transcript (default: .yargix/session.md)
+  /log [path|on|off]  mirror events as NDJSON (default on: .yargix/events.jsonl)
 
 Anything else is sent to the agent. Ctrl+C stops the current run; Ctrl+D exits.`;
 
@@ -63,6 +65,7 @@ export type Command =
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
   | { kind: "export"; value: string }
+  | { kind: "log"; value: string }
   | { kind: "unknown"; name: string };
 
 /**
@@ -116,6 +119,8 @@ export function parseCommand(line: string): Command {
       return { kind: "load", value };
     case "export":
       return { kind: "export", value };
+    case "log":
+      return { kind: "log", value };
     default:
       return { kind: "unknown", name };
   }
@@ -193,8 +198,9 @@ interface SessionState {
 }
 
 /** Run the interactive session until the user leaves. Resolves with an exit code. */
-export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<number> {
+export async function runRepl(options: CliOptions, deps: ReplDeps, incomingLog?: EventLog): Promise<number> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let log = incomingLog;
   const state: SessionState = {
     mode: options.mode,
     model: options.model,
@@ -214,6 +220,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
+  if (log) out(`- ${describeLog(log)}`);
 
   let running: AbortController | undefined;
   // Ctrl+C stops the current run rather than killing the session.
@@ -348,6 +355,32 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       out(isIoError(written) ? `- ${written.error}` : `- exported ${written.path}`);
       continue;
     }
+    if (cmd.kind === "log") {
+      const action = parseLogArg(cmd.value);
+      if (action.action === "show") {
+        out(`- ${describeLog(log)}`);
+        continue;
+      }
+      if (action.action === "off") {
+        await log?.close();
+        log = undefined;
+        out("- event log: off");
+        continue;
+      }
+      if (options.output && resolvedPathsEqual(action.path, options.output, options.cwd)) {
+        out("- --log-file and --output cannot be the same path");
+        continue;
+      }
+      const opened = await EventLog.open(action.path, options.cwd);
+      if (isIoError(opened)) {
+        out(`- ${opened.error}`);
+        continue;
+      }
+      await log?.close();
+      log = opened;
+      out(`- ${describeLog(log)}`);
+      continue;
+    }
     if (cmd.kind === "unknown") {
       out(`- unknown command "/${cmd.name}" (try /help)`);
       continue;
@@ -395,7 +428,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
           return { approved: false as const, blockedSubject: toolName };
         },
         signal: controller.signal,
-        emit: (ev: AgentEvent) => {
+        emit: teeEmit((ev: AgentEvent) => {
           if (ev.type === "text-delta") {
             process.stdout.write(ev.text);
             midLine = !ev.text.endsWith("\n");
@@ -417,7 +450,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
             endLine();
             process.stdout.write(`x ${ev.message}\n`);
           }
-        },
+        }, log),
       });
     } catch (error) {
       endLine();
@@ -436,6 +469,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
 
   rl.off("SIGINT", onInterrupt);
   rl.close();
+  await log?.close();
   out("bye");
   return 0;
 }
