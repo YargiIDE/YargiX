@@ -17,7 +17,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
+import { parseArgs, isExecutingMode, loopFlags, MODES, USAGE } from "../../cli/args";
 
 const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
 const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
@@ -76,6 +76,8 @@ test("a flag missing its value is reported", () => {
   assert.match(parse(["x", "--model"]).errors.join(" "), /--model needs a value/);
   // A following flag must not be swallowed as the value.
   assert.match(parse(["x", "--model", "--json"]).errors.join(" "), /--model needs a value/);
+  assert.match(parse(["x", "--max-tokens"]).errors.join(" "), /--max-tokens needs a value/);
+  assert.match(parse(["x", "--max-tokens", "--json"]).errors.join(" "), /--max-tokens needs a value/);
 });
 
 test("boolean flags set exactly what they say", () => {
@@ -156,6 +158,10 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--max-tokens/);
+  assert.match(USAGE, /--no-self-check/);
+  assert.match(USAGE, /--no-workspace/);
+  assert.match(USAGE, /YARGIX_MAX_TOKENS/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -226,6 +232,54 @@ test("timeout ignores nonsense the way max-steps does", () => {
   assert.equal(parse(["x", "--timeout", "abc"]).options.timeout, 0);
   assert.equal(parse(["x", "--timeout", "0"]).options.timeout, 0);
   assert.equal(parse(["x", "--timeout", "-3"]).options.timeout, 0);
+});
+
+test("max-tokens defaults to unset and accepts a positive integer", () => {
+  assert.equal(parse(["x"]).options.maxTokens, 0);
+  assert.equal(parse(["x", "--max-tokens", "2048"]).options.maxTokens, 2048);
+  assert.equal(parse(["x", "--max-tokens", "0"]).options.maxTokens, 0);
+});
+
+test("max-tokens ignores nonsense the way timeout does", () => {
+  assert.equal(parse(["x", "--max-tokens", "abc"]).options.maxTokens, 0);
+  assert.equal(parse(["x", "--max-tokens", "-8"]).options.maxTokens, 0);
+});
+
+test("YARGIX_MAX_TOKENS seeds the cap and flags override it", () => {
+  const env = { ...ENV, YARGIX_MAX_TOKENS: "1024" };
+  assert.equal(parse(["x"], env).options.maxTokens, 1024);
+  assert.equal(parse(["x", "--max-tokens", "4096"], env).options.maxTokens, 4096);
+  assert.equal(parse(["x", "--max-tokens", "0"], env).options.maxTokens, 0);
+});
+
+test("self-check and workspace default on and the no- flags turn them off", () => {
+  const defaults = parse(["x"]).options;
+  assert.equal(defaults.selfCheck, true);
+  assert.equal(defaults.workspace, true);
+  const off = parse(["x", "--no-self-check", "--no-workspace"]).options;
+  assert.equal(off.selfCheck, false);
+  assert.equal(off.workspace, false);
+});
+
+test("the last of a pair of opposite flags wins", () => {
+  const a = parse(["x", "--no-self-check", "--self-check", "--no-workspace", "--workspace"]).options;
+  assert.equal(a.selfCheck, true);
+  assert.equal(a.workspace, true);
+  const b = parse(["x", "--self-check", "--no-self-check", "--workspace", "--no-workspace"]).options;
+  assert.equal(b.selfCheck, false);
+  assert.equal(b.workspace, false);
+});
+
+test("loopFlags omits maxTokens when unset so the provider default stays", () => {
+  const unset = loopFlags({ maxTokens: 0, selfCheck: true, workspace: true });
+  assert.equal("maxTokens" in unset, false);
+  assert.equal(unset.selfCheckEnabled, true);
+  assert.equal(unset.enableWorkspaceContext, true);
+
+  const set = loopFlags({ maxTokens: 2048, selfCheck: false, workspace: false });
+  assert.equal(set.maxTokens, 2048);
+  assert.equal(set.selfCheckEnabled, false);
+  assert.equal(set.enableWorkspaceContext, false);
 });
 
 test("--file and -i together is a session that starts from the file", () => {

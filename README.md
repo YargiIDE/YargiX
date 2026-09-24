@@ -206,7 +206,8 @@ yargix "explain what this project does" --mode ask
 yargix "review the uncommitted changes" --mode review
 yargix "fix the failing build" --auto --json  # for CI
 yargix --file task.md --output answer.md --auto --timeout 600
-cat prompt.txt | yargix --stdin --mode ask
+yargix --file task.md --auto --no-self-check --max-tokens 2048
+cat prompt.txt | yargix --stdin --mode ask --no-workspace
 ```
 
 | Flag | |
@@ -220,16 +221,19 @@ cat prompt.txt | yargix --stdin --mode ask
 | `-o, --output <path>` | Write the final answer to a file |
 | `--system <text>` | Extra instructions for this run |
 | `--timeout <sec>` | Abort the run after this many seconds |
+| `--max-tokens <n>` | Cap the model's reply (`0` / omit = provider default). Also `YARGIX_MAX_TOKENS` |
+| `--no-self-check` | Skip the post-edit "verify your own work" turn (`--self-check` forces it on) |
+| `--no-workspace` | Do not inject rules, memory, skills, or recent files (`--workspace` restores the default) |
 | `--auto` | Approve writes and commands without asking |
 | `--json` | Newline-delimited JSON events |
 | `-q, --quiet` | Only the final answer |
 | `-C, --cwd <dir>` | Work in another directory |
 
-In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session.
+In an **interactive session** approvals become a real question — and only an explicit `y` or `a` counts as consent. Pressing Enter refuses. `/save`, `/load` and `/export` persist the conversation as JSON or a markdown transcript under `.yargix/` (or a path you pass). `/system` sets extra instructions for the rest of the session. `/max-tokens`, `/self-check`, and `/workspace` change the same run limits the flags set, mid-session.
 
 In **unattended mode** anything that would ask is denied unless `--auto` is passed, so a pipeline never silently gains write access to a checkout.
 
-**Environment:** `YARGIX_API_KEY` · `YARGIX_BASE_URL` · `YARGIX_MODEL`
+**Environment:** `YARGIX_API_KEY` · `YARGIX_BASE_URL` · `YARGIX_MODEL` · `YARGIX_MAX_TOKENS`
 **Exit codes:** `0` success · `1` agent error · `2` bad usage
 
 There is also a **standalone executable** — no Node installation required:
