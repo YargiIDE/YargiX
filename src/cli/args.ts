@@ -22,6 +22,18 @@ export interface CliOptions {
   system: string;
   /** Wall-clock abort after this many seconds. 0 = no limit. */
   timeout: number;
+  /**
+   * Cap the model's reply. 0 = let the provider decide (same as the editor's
+   * `yargix.maxResponseLength` default).
+   */
+  maxTokens: number;
+  /** After a run that edited files, ask the model to re-read and check itself. */
+  selfCheck: boolean;
+  /**
+   * Inject workspace rules, memory, skills, and recently viewed files.
+   * Off is cheaper and more deterministic for isolated CI prompts.
+   */
+  workspace: boolean;
   mode: Mode;
   model: string;
   baseUrl: string;
@@ -63,7 +75,12 @@ OPTIONS
   -o, --output <path>    Write the final answer to a file when the run finishes
       --system <text>    Extra instructions (user rules) for this run
       --timeout <sec>    Abort the run after this many seconds (0 = no limit)
+      --max-tokens <n>   Cap the model's reply (0 = let the provider decide)
       --max-steps <n>    Stop after n agent steps (default: 50)
+      --no-self-check    Skip the post-edit "verify your own work" turn
+      --self-check       Force that turn on (the default)
+      --no-workspace     Do not inject rules, memory, skills, or recent files
+      --workspace        Inject workspace context (the default)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
       --json             Emit newline-delimited JSON events, for CI
@@ -73,7 +90,7 @@ OPTIONS
   -V, --version          Show the version
 
 ENVIRONMENT
-  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
+  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL, YARGIX_MAX_TOKENS
 
 EXIT CODES
   0 success   1 agent error   2 bad usage
@@ -83,11 +100,37 @@ EXAMPLES
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
   yargix --file task.md --output answer.md --auto --timeout 600
+  yargix --file task.md --auto --no-self-check --max-tokens 2048
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** 0 is a real value ("unset"), unlike {@link toInt} which treats it as missing. */
+function toNatural(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+/**
+ * The subset of {@link CliOptions} that maps onto the agent loop.
+ *
+ * Kept next to the parser so a flag cannot exist without a field the loop
+ * actually reads. `maxTokens` is omitted when unset so the provider default
+ * stays in charge.
+ */
+export function loopFlags(opts: Pick<CliOptions, "maxTokens" | "selfCheck" | "workspace">): {
+  maxTokens?: number;
+  selfCheckEnabled: boolean;
+  enableWorkspaceContext: boolean;
+} {
+  return {
+    ...(opts.maxTokens > 0 ? { maxTokens: opts.maxTokens } : {}),
+    selfCheckEnabled: opts.selfCheck,
+    enableWorkspaceContext: opts.workspace,
+  };
 }
 
 /**
@@ -111,6 +154,9 @@ export function parseArgs(
     output: "",
     system: "",
     timeout: 0,
+    maxTokens: toNatural(env.YARGIX_MAX_TOKENS, 0),
+    selfCheck: true,
+    workspace: true,
     mode: "agent",
     model: env.YARGIX_MODEL ?? "",
     baseUrl: env.YARGIX_BASE_URL ?? "",
@@ -204,6 +250,21 @@ export function parseArgs(
         break;
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
+        break;
+      case "--max-tokens":
+        options.maxTokens = toNatural(value(arg, argv[++i]), options.maxTokens);
+        break;
+      case "--no-self-check":
+        options.selfCheck = false;
+        break;
+      case "--self-check":
+        options.selfCheck = true;
+        break;
+      case "--no-workspace":
+        options.workspace = false;
+        break;
+      case "--workspace":
+        options.workspace = true;
         break;
       default:
         // A lone "-" is the Unix stdin placeholder, not an unknown flag.

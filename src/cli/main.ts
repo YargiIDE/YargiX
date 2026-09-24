@@ -15,7 +15,7 @@
  */
 
 import { configureShim } from "./vscodeShim";
-import { parseArgs, isExecutingMode, USAGE, type CliOptions } from "./args";
+import { parseArgs, isExecutingMode, loopFlags, USAGE, type CliOptions } from "./args";
 import { isIoError, loadPrompt, promptSource, writeTextFile } from "./io";
 import type { AgentEvent } from "../agent/types";
 import { browserSession } from "../integrations/browser";
@@ -25,7 +25,9 @@ const VERSION = "0.1.0";
 /** Settings the agent core reads through `workspace.getConfiguration`. */
 function shimSettings(opts: CliOptions): Record<string, unknown> {
   return {
-    "yargix.agent.selfCheck": true,
+    "yargix.agent.selfCheck": opts.selfCheck,
+    "yargix.maxResponseLength": opts.maxTokens,
+    "yargix.enableWorkspaceContext": opts.workspace,
     // No editor to review in, so the plan gate would have nobody to ask.
     "yargix.plan.requireApproval": false,
     "yargix.inlineCompletions.enabled": false,
@@ -112,7 +114,7 @@ async function main(): Promise<number> {
           extraInstructions: options.system || undefined,
           enableFileReading: true,
           enableTerminalSuggestions: true,
-          enableWorkspaceContext: true,
+          ...loopFlags(options),
           ...o,
         } as Parameters<typeof runAgent>[0]),
       toolNamesFor: (mode) => toolsForMode(mode).map((t) => t.schema.function.name),
@@ -180,7 +182,7 @@ async function main(): Promise<number> {
       maxSteps: options.maxSteps,
       enableFileReading: true,
       enableTerminalSuggestions: isExecutingMode(options.mode),
-      enableWorkspaceContext: true,
+      ...loopFlags(options),
       // Nobody can answer a prompt here: --auto approves, otherwise refuse and
       // tell the model why, so it reports the blocker instead of looping.
       approve: async (toolName: string) => {

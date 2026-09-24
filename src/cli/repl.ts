@@ -17,7 +17,7 @@
 
 import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
-import { MODES, type CliOptions } from "./args";
+import { loopFlags, MODES, type CliOptions } from "./args";
 import { isIoError, readTextFile, writeTextFile } from "./io";
 import {
   DEFAULT_SESSION_JSON,
@@ -38,6 +38,9 @@ export const HELP = `Commands
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
   /system [text]      extra instructions for this session (/system clear to drop)
+  /max-tokens [n]     cap the model's reply (/max-tokens 0 or clear to drop)
+  /self-check [on|off] after edits, make the agent verify its own work
+  /workspace [on|off] inject rules, memory, skills, and recent files
   /history            how much conversation is being carried
   /cwd                show the working directory
   /tools              list the tools available in this mode
@@ -60,10 +63,21 @@ export type Command =
   | { kind: "model"; value: string }
   | { kind: "auto"; value?: boolean }
   | { kind: "system"; value: string }
+  | { kind: "max-tokens"; value: string }
+  | { kind: "self-check"; value?: boolean }
+  | { kind: "workspace"; value?: boolean }
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
   | { kind: "export"; value: string }
   | { kind: "unknown"; name: string };
+
+/** Map `on`/`off` (and synonyms) to a boolean; anything else is "toggle / show". */
+export function parseToggle(value: string): boolean | undefined {
+  const v = value.trim().toLowerCase();
+  if (v === "on" || v === "true" || v === "yes") return true;
+  if (v === "off" || v === "false" || v === "no") return false;
+  return undefined;
+}
 
 /**
  * Classify one line of input.
@@ -103,13 +117,23 @@ export function parseCommand(line: string): Command {
     case "model":
       return { kind: "model", value };
     case "auto": {
-      const v = value.toLowerCase();
-      if (v === "on" || v === "true" || v === "yes") return { kind: "auto", value: true };
-      if (v === "off" || v === "false" || v === "no") return { kind: "auto", value: false };
-      return { kind: "auto" }; // no argument: toggle
+      const toggled = parseToggle(value);
+      return toggled === undefined ? { kind: "auto" } : { kind: "auto", value: toggled };
     }
     case "system":
       return { kind: "system", value };
+    case "max-tokens":
+    case "maxtokens":
+      return { kind: "max-tokens", value };
+    case "self-check":
+    case "selfcheck": {
+      const toggled = parseToggle(value);
+      return toggled === undefined ? { kind: "self-check" } : { kind: "self-check", value: toggled };
+    }
+    case "workspace": {
+      const toggled = parseToggle(value);
+      return toggled === undefined ? { kind: "workspace" } : { kind: "workspace", value: toggled };
+    }
     case "save":
       return { kind: "save", value };
     case "load":
@@ -189,6 +213,9 @@ interface SessionState {
   model: string;
   auto: boolean;
   system: string;
+  maxTokens: number;
+  selfCheck: boolean;
+  workspace: boolean;
   history: Step[];
 }
 
@@ -200,6 +227,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     model: options.model,
     auto: options.auto,
     system: options.system,
+    maxTokens: options.maxTokens,
+    selfCheck: options.selfCheck,
+    workspace: options.workspace,
     // Mutated in place by the agent, which is what carries the conversation.
     history: [],
   };
@@ -214,6 +244,9 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   out(BANNER);
   out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
+  if (state.maxTokens > 0) out(`max-tokens: ${state.maxTokens}`);
+  if (!state.selfCheck) out("self-check: off");
+  if (!state.workspace) out("workspace context: off");
 
   let running: AbortController | undefined;
   // Ctrl+C stops the current run rather than killing the session.
@@ -305,6 +338,36 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       out("- system instructions updated");
       continue;
     }
+    if (cmd.kind === "max-tokens") {
+      const v = cmd.value.trim();
+      if (!v) {
+        out(state.maxTokens > 0 ? `- max-tokens: ${state.maxTokens}` : "- max-tokens: (provider default)");
+        continue;
+      }
+      if (v.toLowerCase() === "clear" || v === "-") {
+        state.maxTokens = 0;
+        out("- max-tokens cleared (provider default)");
+        continue;
+      }
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        out("- max-tokens needs a non-negative integer (or clear)");
+        continue;
+      }
+      state.maxTokens = Math.floor(n);
+      out(state.maxTokens > 0 ? `- max-tokens: ${state.maxTokens}` : "- max-tokens cleared (provider default)");
+      continue;
+    }
+    if (cmd.kind === "self-check") {
+      state.selfCheck = cmd.value ?? !state.selfCheck;
+      out(`- self-check: ${state.selfCheck ? "on" : "off"}`);
+      continue;
+    }
+    if (cmd.kind === "workspace") {
+      state.workspace = cmd.value ?? !state.workspace;
+      out(`- workspace context: ${state.workspace ? "on" : "off"}`);
+      continue;
+    }
     if (cmd.kind === "save") {
       const dest = cmd.value.trim() || DEFAULT_SESSION_JSON;
       const snap = snapshotSession({
@@ -352,6 +415,11 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       out(`- unknown command "/${cmd.name}" (try /help)`);
       continue;
     }
+    if (cmd.kind !== "prompt") {
+      const _exhaustive: never = cmd;
+      void _exhaustive;
+      continue;
+    }
 
     // ---- a real prompt: run the agent ----
     const controller = new AbortController();
@@ -383,6 +451,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         prompt: cmd.text,
         history: state.history,
         extraInstructions: state.system || undefined,
+        ...loopFlags(state),
         approve: async (toolName: string, input: unknown) => {
           if (state.auto) return true;
           endLine();

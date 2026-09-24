@@ -4,6 +4,15 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.5] - 2026-09-24
+
+### Added
+
+- CLI `--max-tokens <n>` (and `YARGIX_MAX_TOKENS`) caps the model's reply the same way the editor's `yargix.maxResponseLength` does; `0` leaves the provider default
+- `--no-self-check` / `--self-check` skip or force the post-edit "verify your own work" turn, so CI that already runs its own tests does not spend an extra model step
+- `--no-workspace` / `--workspace` control whether rules, memory, skills, and recently viewed files are injected — off is cheaper and more deterministic for isolated prompts
+- Interactive `/max-tokens`, `/self-check`, and `/workspace` change those same limits mid-session
+
 ## [0.1.4] - 2026-09-20
 
 ### Added

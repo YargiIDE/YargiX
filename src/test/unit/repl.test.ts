@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type * as readline from "node:readline";
 
-import { parseCommand, parseApproval, describeAction, LineReader, HELP, BANNER } from "../../cli/repl";
+import { parseCommand, parseApproval, parseToggle, describeAction, LineReader, HELP, BANNER } from "../../cli/repl";
 
 // ------------------------------------------------------------ parseCommand
 
@@ -183,6 +183,9 @@ test("the help text documents every command the parser accepts", () => {
     "/model",
     "/auto",
     "/system",
+    "/max-tokens",
+    "/self-check",
+    "/workspace",
     "/history",
     "/cwd",
     "/tools",
@@ -208,4 +211,31 @@ test("system shows, sets, and is not sent to the model as a prompt", () => {
   assert.deepEqual(parseCommand("/system be terse"), { kind: "system", value: "be terse" });
   assert.deepEqual(parseCommand("/system clear"), { kind: "system", value: "clear" });
   assert.notEqual(parseCommand("/system be terse").kind, "prompt");
+});
+
+test("parseToggle accepts the same synonyms as /auto", () => {
+  assert.equal(parseToggle("on"), true);
+  assert.equal(parseToggle("YES"), true);
+  assert.equal(parseToggle("off"), false);
+  assert.equal(parseToggle("no"), false);
+  assert.equal(parseToggle(""), undefined);
+  assert.equal(parseToggle("maybe"), undefined);
+});
+
+test("self-check and workspace parse on, off, and a bare toggle", () => {
+  assert.deepEqual(parseCommand("/self-check on"), { kind: "self-check", value: true });
+  assert.deepEqual(parseCommand("/self-check off"), { kind: "self-check", value: false });
+  assert.deepEqual(parseCommand("/self-check"), { kind: "self-check" });
+  assert.deepEqual(parseCommand("/selfcheck no"), { kind: "self-check", value: false });
+  assert.deepEqual(parseCommand("/workspace on"), { kind: "workspace", value: true });
+  assert.deepEqual(parseCommand("/workspace off"), { kind: "workspace", value: false });
+  assert.deepEqual(parseCommand("/workspace"), { kind: "workspace" });
+});
+
+test("max-tokens carries its argument and is never a prompt", () => {
+  assert.deepEqual(parseCommand("/max-tokens"), { kind: "max-tokens", value: "" });
+  assert.deepEqual(parseCommand("/max-tokens 2048"), { kind: "max-tokens", value: "2048" });
+  assert.deepEqual(parseCommand("/max-tokens clear"), { kind: "max-tokens", value: "clear" });
+  assert.deepEqual(parseCommand("/maxtokens 512"), { kind: "max-tokens", value: "512" });
+  assert.notEqual(parseCommand("/max-tokens 2048").kind, "prompt");
 });
