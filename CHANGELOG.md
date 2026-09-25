@@ -4,6 +4,13 @@ All notable changes to the "ocursor" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.5] - 2026-09-25
+
+### Added
+
+- CLI `--no-web` / `--web` (last flag wins) so a run can drop WebSearch and WebFetch without turning off the local Browser tool. Interactive `/web [on|off]` matches it, and `/tools` hides the pair when they are off
+- CLI `--context-tokens <n>` and `YARGIX_CONTEXT_TOKENS` to set the loop's history-trim budget. `0` or omit leaves the provider default. Interactive `/context-tokens [n|clear]` matches it
+
 ## [0.1.4] - 2026-09-20
 
 ### Added

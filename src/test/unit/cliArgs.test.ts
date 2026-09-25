@@ -17,10 +17,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, isExecutingMode, MODES, USAGE } from "../../cli/args";
+import { parseArgs, isExecutingMode, loopRuntimeFlags, withoutDisabledTools, MODES, USAGE } from "../../cli/args";
 
-const ENV = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
-const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env as NodeJS.ProcessEnv, tty);
+const ENV: NodeJS.ProcessEnv = { YARGIX_API_KEY: "k", YARGIX_BASE_URL: "https://api.test/v1", YARGIX_MODEL: "m" };
+const parse = (argv: string[], env = ENV, tty = false) => parseArgs(argv, env, tty);
 
 // ------------------------------------------------------------------ basics
 
@@ -32,6 +32,8 @@ test("a bare prompt parses with sensible defaults", () => {
   assert.equal(options.maxSteps, 50);
   assert.equal(options.auto, false, "auto must never be on by default");
   assert.equal(options.json, false);
+  assert.equal(options.web, true, "web tools stay on unless --no-web is passed");
+  assert.equal(options.contextTokens, 0, "omit contextTokens so the provider default stays");
 });
 
 test("unquoted words are joined into one prompt", () => {
@@ -156,6 +158,9 @@ test("the usage text documents every mode and the --auto requirement", () => {
   assert.match(USAGE, /--output/);
   assert.match(USAGE, /--system/);
   assert.match(USAGE, /--timeout/);
+  assert.match(USAGE, /--no-web/);
+  assert.match(USAGE, /--context-tokens/);
+  assert.match(USAGE, /YARGIX_CONTEXT_TOKENS/);
 });
 
 test("--file supplies the prompt so argv is optional", () => {
@@ -233,4 +238,64 @@ test("--file and -i together is a session that starts from the file", () => {
   assert.deepEqual(errors, []);
   assert.equal(options.interactive, true);
   assert.equal(options.file, "task.md");
+});
+
+test("--no-web turns both public-web tools off", () => {
+  const { options, errors } = parse(["x", "--no-web"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.web, false);
+  assert.deepEqual(loopRuntimeFlags(options), {
+    enableWebSearch: false,
+    enableWebFetch: false,
+  });
+});
+
+test("the last of --web / --no-web wins", () => {
+  assert.equal(parse(["x", "--web", "--no-web"]).options.web, false);
+  assert.equal(parse(["x", "--no-web", "--web"]).options.web, true);
+});
+
+test("--context-tokens takes a positive integer", () => {
+  const { options, errors } = parse(["x", "--context-tokens", "128000"]);
+  assert.deepEqual(errors, []);
+  assert.equal(options.contextTokens, 128000);
+  assert.deepEqual(loopRuntimeFlags(options), {
+    enableWebSearch: true,
+    enableWebFetch: true,
+    contextTokens: 128000,
+  });
+});
+
+test("--context-tokens 0 is the provider default, not a zero-token window", () => {
+  const { options } = parse(["x", "--context-tokens", "0"]);
+  assert.equal(options.contextTokens, 0);
+  assert.equal("contextTokens" in loopRuntimeFlags(options), false);
+});
+
+test("--context-tokens ignores nonsense the way max-steps does", () => {
+  assert.equal(parse(["x", "--context-tokens", "abc"]).options.contextTokens, 0);
+  assert.equal(parse(["x", "--context-tokens", "-8"]).options.contextTokens, 0);
+});
+
+test("YARGIX_CONTEXT_TOKENS seeds the cap and the flag overrides it", () => {
+  const env = { ...ENV, YARGIX_CONTEXT_TOKENS: "64000" };
+  assert.equal(parse(["x"], env).options.contextTokens, 64000);
+  assert.equal(parse(["x", "--context-tokens", "32000"], env).options.contextTokens, 32000);
+  assert.equal(parse(["x", "--context-tokens", "0"], env).options.contextTokens, 0);
+  assert.equal(parse(["x"], { ...ENV, YARGIX_CONTEXT_TOKENS: "nope" }).options.contextTokens, 0);
+});
+
+test("--context-tokens needs a value", () => {
+  assert.match(parse(["x", "--context-tokens"]).errors.join(" "), /--context-tokens needs a value/);
+  assert.match(parse(["x", "--context-tokens", "--json"]).errors.join(" "), /--context-tokens needs a value/);
+});
+
+test("an unknown --web-something is still rejected", () => {
+  assert.match(parse(["x", "--web-search"]).errors.join(" "), /unknown option "--web-search"/);
+});
+
+test("withoutDisabledTools drops only the public-web pair", () => {
+  const names = ["Read", "WebSearch", "WebFetch", "Browser", "Shell"];
+  assert.deepEqual(withoutDisabledTools(names, { web: true }), names);
+  assert.deepEqual(withoutDisabledTools(names, { web: false }), ["Read", "Browser", "Shell"]);
 });

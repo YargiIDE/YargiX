@@ -182,6 +182,8 @@ test("the help text documents every command the parser accepts", () => {
     "/mode",
     "/model",
     "/auto",
+    "/web",
+    "/context-tokens",
     "/system",
     "/history",
     "/cwd",
@@ -208,4 +210,20 @@ test("system shows, sets, and is not sent to the model as a prompt", () => {
   assert.deepEqual(parseCommand("/system be terse"), { kind: "system", value: "be terse" });
   assert.deepEqual(parseCommand("/system clear"), { kind: "system", value: "clear" });
   assert.notEqual(parseCommand("/system be terse").kind, "prompt");
+});
+
+test("web parses on, off, and a bare toggle", () => {
+  assert.deepEqual(parseCommand("/web on"), { kind: "web", value: true });
+  assert.deepEqual(parseCommand("/web yes"), { kind: "web", value: true });
+  assert.deepEqual(parseCommand("/web off"), { kind: "web", value: false });
+  assert.deepEqual(parseCommand("/web no"), { kind: "web", value: false });
+  assert.deepEqual(parseCommand("/web"), { kind: "web" });
+  assert.notEqual(parseCommand("/web off").kind, "prompt");
+});
+
+test("context-tokens carries its argument and is not a prompt", () => {
+  assert.deepEqual(parseCommand("/context-tokens"), { kind: "context-tokens", value: "" });
+  assert.deepEqual(parseCommand("/context-tokens 128000"), { kind: "context-tokens", value: "128000" });
+  assert.deepEqual(parseCommand("/context-tokens clear"), { kind: "context-tokens", value: "clear" });
+  assert.notEqual(parseCommand("/context-tokens 8000").kind, "prompt");
 });
