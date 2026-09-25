@@ -36,6 +36,16 @@ export interface CliOptions {
   quiet: boolean;
   /** Hold a session open instead of answering once and exiting. */
   interactive: boolean;
+  /**
+   * When false, WebSearch and WebFetch are not offered to the model.
+   * Browser stays available — that is a local Chrome, not the public web.
+   */
+  web: boolean;
+  /**
+   * Model context window in tokens. `0` leaves the provider default
+   * (`contextTokens` is omitted from the loop options).
+   */
+  contextTokens: number;
   help: boolean;
   version: boolean;
 }
@@ -66,6 +76,10 @@ OPTIONS
       --max-steps <n>    Stop after n agent steps (default: 50)
       --auto             Approve file writes and commands without asking.
                          Required for anything that changes the workspace.
+      --no-web           Disable WebSearch and WebFetch for this run
+      --web              Re-enable web tools (last of --web / --no-web wins)
+      --context-tokens <n>
+                         Context window in tokens (0 = provider default)
       --json             Emit newline-delimited JSON events, for CI
   -i, --interactive      Open a session instead of answering once
   -q, --quiet            Only print the final answer
@@ -73,7 +87,7 @@ OPTIONS
   -V, --version          Show the version
 
 ENVIRONMENT
-  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL
+  YARGIX_API_KEY, YARGIX_BASE_URL, YARGIX_MODEL, YARGIX_CONTEXT_TOKENS
 
 EXIT CODES
   0 success   1 agent error   2 bad usage
@@ -82,12 +96,21 @@ EXAMPLES
   yargix "explain what this project does" --mode ask
   yargix "add a --verbose flag and update the README" --auto
   yargix "review the uncommitted changes" --mode review --json
+  yargix "summarise src/cli" --mode ask --no-web
   yargix --file task.md --output answer.md --auto --timeout 600
   cat prompt.txt | yargix --stdin --mode ask`;
 
 function toInt(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** Like {@link toInt}, but `0` is a real value (leave the provider default). */
+function toTokenCap(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.floor(n);
 }
 
 /**
@@ -121,6 +144,8 @@ export function parseArgs(
     json: false,
     quiet: false,
     interactive: false,
+    web: true,
+    contextTokens: toTokenCap(env.YARGIX_CONTEXT_TOKENS, 0),
     help: false,
     version: false,
   };
@@ -147,6 +172,12 @@ export function parseArgs(
         break;
       case "--auto":
         options.auto = true;
+        break;
+      case "--no-web":
+        options.web = false;
+        break;
+      case "--web":
+        options.web = true;
         break;
       case "--json":
         options.json = true;
@@ -205,6 +236,9 @@ export function parseArgs(
       case "--timeout":
         options.timeout = toInt(value(arg, argv[++i]), 0);
         break;
+      case "--context-tokens":
+        options.contextTokens = toTokenCap(value(arg, argv[++i]), options.contextTokens);
+        break;
       default:
         // A lone "-" is the Unix stdin placeholder, not an unknown flag.
         if (arg.startsWith("-") && arg !== "-") errors.push(`unknown option "${arg}"`);
@@ -239,4 +273,28 @@ export function parseArgs(
 /** Modes that can change the workspace, and therefore need --auto to do so. */
 export function isExecutingMode(mode: Mode): boolean {
   return mode === "agent" || mode === "debug" || mode === "multitask" || mode === "project";
+}
+
+/**
+ * Map CLI knobs onto the loop options that already honour them.
+ *
+ * `contextTokens` is omitted when unset so the provider default stays in
+ * charge — passing `0` would still look like a budget to the trimmer.
+ */
+export function loopRuntimeFlags(opts: Pick<CliOptions, "web" | "contextTokens">): {
+  enableWebSearch: boolean;
+  enableWebFetch: boolean;
+  contextTokens?: number;
+} {
+  return {
+    enableWebSearch: opts.web,
+    enableWebFetch: opts.web,
+    ...(opts.contextTokens > 0 ? { contextTokens: opts.contextTokens } : {}),
+  };
+}
+
+/** Drop tools that `--no-web` / `/web off` have taken away, for `/tools`. */
+export function withoutDisabledTools(names: string[], opts: Pick<CliOptions, "web">): string[] {
+  if (opts.web) return names;
+  return names.filter((n) => n !== "WebSearch" && n !== "WebFetch");
 }

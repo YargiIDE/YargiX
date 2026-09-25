@@ -17,7 +17,7 @@
 
 import * as readline from "readline";
 import type { AgentEvent, Mode, Step } from "../agent/types";
-import { MODES, type CliOptions } from "./args";
+import { MODES, loopRuntimeFlags, withoutDisabledTools, type CliOptions } from "./args";
 import { isIoError, readTextFile, writeTextFile } from "./io";
 import {
   DEFAULT_SESSION_JSON,
@@ -37,6 +37,8 @@ export const HELP = `Commands
   /mode <name>        switch mode (${MODES.join(", ")})
   /model <id>         switch model
   /auto [on|off]      approve actions without asking (currently: %AUTO%)
+  /web [on|off]       allow WebSearch / WebFetch (currently: %WEB%)
+  /context-tokens [n] context window in tokens (0 = provider default)
   /system [text]      extra instructions for this session (/system clear to drop)
   /history            how much conversation is being carried
   /cwd                show the working directory
@@ -59,6 +61,8 @@ export type Command =
   | { kind: "mode"; value: string }
   | { kind: "model"; value: string }
   | { kind: "auto"; value?: boolean }
+  | { kind: "web"; value?: boolean }
+  | { kind: "context-tokens"; value: string }
   | { kind: "system"; value: string }
   | { kind: "save"; value: string }
   | { kind: "load"; value: string }
@@ -108,6 +112,14 @@ export function parseCommand(line: string): Command {
       if (v === "off" || v === "false" || v === "no") return { kind: "auto", value: false };
       return { kind: "auto" }; // no argument: toggle
     }
+    case "web": {
+      const v = value.toLowerCase();
+      if (v === "on" || v === "true" || v === "yes") return { kind: "web", value: true };
+      if (v === "off" || v === "false" || v === "no") return { kind: "web", value: false };
+      return { kind: "web" };
+    }
+    case "context-tokens":
+      return { kind: "context-tokens", value };
     case "system":
       return { kind: "system", value };
     case "save":
@@ -188,6 +200,8 @@ interface SessionState {
   mode: Mode;
   model: string;
   auto: boolean;
+  web: boolean;
+  contextTokens: number;
   system: string;
   history: Step[];
 }
@@ -199,6 +213,8 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     mode: options.mode,
     model: options.model,
     auto: options.auto,
+    web: options.web,
+    contextTokens: options.contextTokens,
     system: options.system,
     // Mutated in place by the agent, which is what carries the conversation.
     history: [],
@@ -212,7 +228,8 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
   };
 
   out(BANNER);
-  out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}`);
+  out(`mode: ${state.mode}   model: ${state.model || "(unset)"}   auto: ${state.auto ? "on" : "off"}   web: ${state.web ? "on" : "off"}`);
+  if (state.contextTokens > 0) out(`context-tokens: ${state.contextTokens}`);
   if (state.system) out(`system: ${state.system.length > 70 ? `${state.system.slice(0, 70)}...` : state.system}`);
 
   let running: AbortController | undefined;
@@ -247,7 +264,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     if (cmd.kind === "exit") break;
 
     if (cmd.kind === "help") {
-      out(HELP.replace("%AUTO%", state.auto ? "on" : "off"));
+      out(HELP.replace("%AUTO%", state.auto ? "on" : "off").replace("%WEB%", state.web ? "on" : "off"));
       continue;
     }
     if (cmd.kind === "clear") {
@@ -264,7 +281,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
       continue;
     }
     if (cmd.kind === "tools") {
-      out(`- ${deps.toolNamesFor(state.mode).join(", ")}`);
+      out(`- ${withoutDisabledTools(deps.toolNamesFor(state.mode), { web: state.web }).join(", ")}`);
       continue;
     }
     if (cmd.kind === "mode") {
@@ -288,6 +305,31 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
     if (cmd.kind === "auto") {
       state.auto = cmd.value ?? !state.auto;
       out(`- auto-approve: ${state.auto ? "on" : "off"}`);
+      continue;
+    }
+    if (cmd.kind === "web") {
+      state.web = cmd.value ?? !state.web;
+      out(`- web tools: ${state.web ? "on" : "off"}`);
+      continue;
+    }
+    if (cmd.kind === "context-tokens") {
+      const v = cmd.value.trim();
+      if (!v) {
+        out(state.contextTokens > 0 ? `- context-tokens: ${state.contextTokens}` : "- context-tokens: (provider default)");
+        continue;
+      }
+      if (v.toLowerCase() === "clear" || v === "-") {
+        state.contextTokens = 0;
+        out("- context-tokens cleared");
+        continue;
+      }
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        out("- context-tokens needs a non-negative integer (0 = provider default)");
+        continue;
+      }
+      state.contextTokens = Math.floor(n);
+      out(state.contextTokens > 0 ? `- context-tokens: ${state.contextTokens}` : "- context-tokens: (provider default)");
       continue;
     }
     if (cmd.kind === "system") {
@@ -383,6 +425,7 @@ export async function runRepl(options: CliOptions, deps: ReplDeps): Promise<numb
         prompt: cmd.text,
         history: state.history,
         extraInstructions: state.system || undefined,
+        ...loopRuntimeFlags(state),
         approve: async (toolName: string, input: unknown) => {
           if (state.auto) return true;
           endLine();
